@@ -1,4 +1,6 @@
-# 🧹 AI Storage Cleaner — Project Notes
+# 🧹 Beresin — Project Notes
+
+> "Beresin HP lu!" — AI-powered storage cleaner buat Android.
 
 ## 💡 Ide Awal
 Ide muncul dari percakapan tentang membersihkan file sampah di HP Android.

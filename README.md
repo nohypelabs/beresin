@@ -1,6 +1,8 @@
-# 🧹 AI Storage Cleaner
+# 🧹 Beresin
 
-Android app yang menggunakan AI untuk scan, analisa, dan bersihkan storage HP secara otomatis.
+> "Beresin HP lu!" — AI-powered storage cleaner buat Android.
+
+Android app yang menggunakan AI untuk scan, analisa, dan bersihkan storage HP secara otomatis. Tinggal tap, beres.
 
 ## Fitur
 
