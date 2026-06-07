@@ -164,7 +164,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun runAgent(userRequest: String) {
         if (apiKey.isBlank() && providerType != "mimo") {
-            _uiState.value = UiState.Error("Please configure your API key first (tap ⚙️)")
+            // Add error as chat message instead of separate screen
+            val currentMessages = _chatMessages.value.toMutableList()
+            currentMessages.add(ChatMessage.User(userRequest))
+            currentMessages.add(ChatMessage.Agent(
+                text = "⚠️ API key belum di-set. Tap ⚙️ untuk konfigurasi.",
+                success = false
+            ))
+            _chatMessages.value = currentMessages
             return
         }
 
@@ -214,21 +221,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ))
                 _chatMessages.value = updatedMessages
 
-                // Done
-                _uiState.value = UiState.AgentResult(result)
+                // Done — go back to Ready (chat stays visible)
+                _uiState.value = UiState.Ready
 
             } catch (e: Exception) {
                 Log.e(TAG, "Agent failed: ${e.message}")
 
-                // Add error to chat
+                // Add error to chat as inline message
                 val updatedMessages = _chatMessages.value.toMutableList()
                 updatedMessages.add(ChatMessage.Agent(
-                    text = "Error: ${e.message}",
+                    text = "❌ Error: ${e.message}",
                     success = false
                 ))
                 _chatMessages.value = updatedMessages
 
-                _uiState.value = UiState.Error("Agent failed: ${e.message}")
+                // Stay in Ready state (error shown inline in chat)
+                _uiState.value = UiState.Ready
             }
         }
     }

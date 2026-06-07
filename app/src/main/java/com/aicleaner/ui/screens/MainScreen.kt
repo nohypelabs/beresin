@@ -1,6 +1,11 @@
 package com.aicleaner.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -118,9 +124,14 @@ fun MainScreen(
                             onDuplicates = { viewModel.findDuplicates() },
                             onCleanJunk = { viewModel.cleanJunk() }
                         )
-                        is MainViewModel.UiState.Error -> ErrorScreen(
-                            message = state.message,
-                            onRetry = { viewModel.resetToReady() }
+                        is MainViewModel.UiState.Error -> ChatScreen(
+                            messages = chatMessages,
+                            hasApiKey = viewModel.hasApiKey(),
+                            onSendMessage = { viewModel.runAgent(it) },
+                            onScan = { viewModel.scanStorage() },
+                            onOrganize = { viewModel.organizeDownloads() },
+                            onDuplicates = { viewModel.findDuplicates() },
+                            onCleanJunk = { viewModel.cleanJunk() }
                         )
                     }
                 }
@@ -334,10 +345,12 @@ fun ChatScreen(
     onDuplicates: () -> Unit,
     onCleanJunk: () -> Unit,
     isAgentRunning: Boolean = false,
-    onCancel: (() -> Unit)? = null
+    onCancel: (() -> Unit)? = null,
+    errorMessage: String? = null
 ) {
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val context = LocalContext.current
 
     // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(messages.size) {
@@ -370,13 +383,27 @@ fun ChatScreen(
 
             // Chat messages
             items(messages) { message ->
-                ChatBubble(message = message)
+                ChatBubble(
+                    message = message,
+                    onCopy = { text ->
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Beresin", text))
+                        Toast.makeText(context, "Disalin!", Toast.LENGTH_SHORT).show()
+                    }
+                )
             }
 
             // Agent running indicator
             if (isAgentRunning) {
                 item {
                     AgentTypingIndicator()
+                }
+            }
+
+            // Error message inline
+            if (errorMessage != null) {
+                item {
+                    ErrorInlineCard(errorMessage)
                 }
             }
         }
@@ -510,11 +537,23 @@ fun QuickActionChip(
 }
 
 @Composable
-fun ChatBubble(message: ChatMessage) {
+fun ChatBubble(
+    message: ChatMessage,
+    onCopy: ((String) -> Unit)? = null
+) {
     val isUser = message is ChatMessage.User
 
+    // Slide-in animation
+    val offsetX by animateDpAsState(
+        targetValue = 0.dp,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "slideIn"
+    )
+
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .offset(x = if (isUser) offsetX else -offsetX),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         if (!isUser) {
@@ -587,6 +626,27 @@ fun ChatBubble(message: ChatMessage) {
                                 color = AccentOrange
                             )
                         }
+
+                        // Copy button for agent responses
+                        if (onCopy != null && message.text.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(
+                                onClick = { onCopy(message.text) },
+                                modifier = Modifier.align(Alignment.End),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = "Salin",
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "Salin",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -610,6 +670,18 @@ fun ChatBubble(message: ChatMessage) {
 
 @Composable
 fun AgentTypingIndicator() {
+    // Pulsing animation
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start
@@ -619,7 +691,7 @@ fun AgentTypingIndicator() {
             modifier = Modifier
                 .size(32.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary),
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha)),
             contentAlignment = Alignment.Center
         ) {
             Text("🤖", fontSize = 16.sp)
@@ -645,6 +717,43 @@ fun AgentTypingIndicator() {
                     "Beresin lagi mikir...",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ErrorInlineCard(message: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Oops! Ada error",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
                 )
             }
         }
