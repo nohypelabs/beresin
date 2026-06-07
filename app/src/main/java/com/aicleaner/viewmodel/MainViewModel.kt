@@ -18,6 +18,28 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * A single message in the chat conversation.
+ */
+sealed class ChatMessage {
+    abstract val timestamp: Long
+
+    /** User's message. */
+    data class User(
+        val text: String,
+        override val timestamp: Long = System.currentTimeMillis()
+    ) : ChatMessage()
+
+    /** Agent's response with steps. */
+    data class Agent(
+        val text: String,
+        val steps: List<AgentStep> = emptyList(),
+        val success: Boolean = true,
+        val iterations: Int = 0,
+        override val timestamp: Long = System.currentTimeMillis()
+    ) : ChatMessage()
+}
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
@@ -42,6 +64,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // Agent steps (for live progress)
     private val _agentSteps = MutableStateFlow<List<AgentStep>>(emptyList())
     val agentSteps: StateFlow<List<AgentStep>> = _agentSteps
+
+    // Chat messages history
+    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages
 
     // API Config
     private var apiKey = prefs.getString(KEY_API_KEY, "") ?: ""
@@ -138,10 +164,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun runAgent(userRequest: String) {
         if (apiKey.isBlank() && providerType != "mimo") {
-            // MiMo might not need API key (local inference)
             _uiState.value = UiState.Error("Please configure your API key first (tap ⚙️)")
             return
         }
+
+        // Add user message to chat
+        val currentMessages = _chatMessages.value.toMutableList()
+        currentMessages.add(ChatMessage.User(userRequest))
+        _chatMessages.value = currentMessages
 
         agentJob = viewModelScope.launch {
             _uiState.value = UiState.AgentRunning("Starting...", emptyList())
@@ -156,7 +186,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     onStep = { step ->
                         // Update live progress
                         val currentSteps = _agentSteps.value.toMutableList()
-                        // Update existing step or add new one
                         val existingIndex = currentSteps.indexOfFirst {
                             it.iteration == step.iteration &&
                             it.toolName == step.toolName &&
@@ -175,11 +204,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 )
 
+                // Add agent response to chat
+                val updatedMessages = _chatMessages.value.toMutableList()
+                updatedMessages.add(ChatMessage.Agent(
+                    text = result.finalResponse,
+                    steps = result.steps,
+                    success = result.success,
+                    iterations = result.iterations
+                ))
+                _chatMessages.value = updatedMessages
+
                 // Done
                 _uiState.value = UiState.AgentResult(result)
 
             } catch (e: Exception) {
                 Log.e(TAG, "Agent failed: ${e.message}")
+
+                // Add error to chat
+                val updatedMessages = _chatMessages.value.toMutableList()
+                updatedMessages.add(ChatMessage.Agent(
+                    text = "Error: ${e.message}",
+                    success = false
+                ))
+                _chatMessages.value = updatedMessages
+
                 _uiState.value = UiState.Error("Agent failed: ${e.message}")
             }
         }
@@ -224,6 +272,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Go back to ready state.
      */
     fun resetToReady() {
+        _agentSteps.value = emptyList()
+        _uiState.value = UiState.Ready
+    }
+
+    /**
+     * Clear chat history.
+     */
+    fun clearChat() {
+        _chatMessages.value = emptyList()
         _agentSteps.value = emptyList()
         _uiState.value = UiState.Ready
     }

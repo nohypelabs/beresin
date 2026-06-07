@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.aicleaner.ai.AgentStep
 import com.aicleaner.ai.StepType
 import com.aicleaner.ui.theme.*
+import com.aicleaner.viewmodel.ChatMessage
 import com.aicleaner.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,6 +38,7 @@ fun MainScreen(
     onRequestPermission: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val chatMessages by viewModel.chatMessages.collectAsState()
     var showSettingsDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -54,6 +56,16 @@ fun MainScreen(
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    // Clear chat button (only show when there are messages)
+                    if (chatMessages.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.clearChat() }) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "New Chat",
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
                     IconButton(onClick = { showSettingsDialog = true }) {
                         Icon(
                             Icons.Default.Settings,
@@ -77,21 +89,34 @@ fun MainScreen(
                         is MainViewModel.UiState.Welcome -> WelcomeScreen(
                             onStart = { viewModel.checkAndSetup() }
                         )
-                        is MainViewModel.UiState.Ready -> ReadyScreen(
+                        is MainViewModel.UiState.Ready -> ChatScreen(
+                            messages = chatMessages,
+                            hasApiKey = viewModel.hasApiKey(),
+                            onSendMessage = { viewModel.runAgent(it) },
+                            onScan = { viewModel.scanStorage() },
+                            onOrganize = { viewModel.organizeDownloads() },
+                            onDuplicates = { viewModel.findDuplicates() },
+                            onCleanJunk = { viewModel.cleanJunk() }
+                        )
+                        is MainViewModel.UiState.AgentRunning -> ChatScreen(
+                            messages = chatMessages,
+                            hasApiKey = viewModel.hasApiKey(),
+                            onSendMessage = { viewModel.runAgent(it) },
                             onScan = { viewModel.scanStorage() },
                             onOrganize = { viewModel.organizeDownloads() },
                             onDuplicates = { viewModel.findDuplicates() },
                             onCleanJunk = { viewModel.cleanJunk() },
-                            hasApiKey = viewModel.hasApiKey()
-                        )
-                        is MainViewModel.UiState.AgentRunning -> AgentRunningScreen(
-                            message = state.message,
-                            steps = state.steps,
+                            isAgentRunning = true,
                             onCancel = { viewModel.cancelAgent() }
                         )
-                        is MainViewModel.UiState.AgentResult -> AgentResultScreen(
-                            result = state.result,
-                            onDone = { viewModel.resetToReady() }
+                        is MainViewModel.UiState.AgentResult -> ChatScreen(
+                            messages = chatMessages,
+                            hasApiKey = viewModel.hasApiKey(),
+                            onSendMessage = { viewModel.runAgent(it) },
+                            onScan = { viewModel.scanStorage() },
+                            onOrganize = { viewModel.organizeDownloads() },
+                            onDuplicates = { viewModel.findDuplicates() },
+                            onCleanJunk = { viewModel.cleanJunk() }
                         )
                         is MainViewModel.UiState.Error -> ErrorScreen(
                             message = state.message,
@@ -294,6 +319,397 @@ fun ReadyScreen(
             gradient = Brush.horizontalGradient(listOf(AccentRed, AccentRedLight)),
             onClick = onCleanJunk
         )
+    }
+}
+
+// ==================== CHAT SCREEN ====================
+
+@Composable
+fun ChatScreen(
+    messages: List<ChatMessage>,
+    hasApiKey: Boolean,
+    onSendMessage: (String) -> Unit,
+    onScan: () -> Unit,
+    onOrganize: () -> Unit,
+    onDuplicates: () -> Unit,
+    onCleanJunk: () -> Unit,
+    isAgentRunning: Boolean = false,
+    onCancel: (() -> Unit)? = null
+) {
+    var inputText by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+
+    // Auto-scroll to bottom when new messages arrive
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Chat messages
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Show quick actions if no messages yet
+            if (messages.isEmpty()) {
+                item {
+                    QuickActionsRow(
+                        onScan = onScan,
+                        onOrganize = onOrganize,
+                        onDuplicates = onDuplicates,
+                        onCleanJunk = onCleanJunk
+                    )
+                }
+            }
+
+            // Chat messages
+            items(messages) { message ->
+                ChatBubble(message = message)
+            }
+
+            // Agent running indicator
+            if (isAgentRunning) {
+                item {
+                    AgentTypingIndicator()
+                }
+            }
+        }
+
+        // API key warning
+        if (!hasApiKey) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Warning, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Set API key di ⚙️ dulu ya",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        // Input field
+        ChatInputField(
+            value = inputText,
+            onValueChange = { inputText = it },
+            onSend = {
+                if (inputText.isNotBlank()) {
+                    onSendMessage(inputText.trim())
+                    inputText = ""
+                }
+            },
+            isEnabled = !isAgentRunning && hasApiKey
+        )
+    }
+}
+
+@Composable
+fun QuickActionsRow(
+    onScan: () -> Unit,
+    onOrganize: () -> Unit,
+    onDuplicates: () -> Unit,
+    onCleanJunk: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp)
+    ) {
+        Text(
+            "🧹 Beresin",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            "Mau beresin apa hari ini?",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Quick action chips
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            QuickActionChip(
+                icon = Icons.Default.Search,
+                label = "Scan",
+                onClick = onScan,
+                modifier = Modifier.weight(1f)
+            )
+            QuickActionChip(
+                icon = Icons.Default.FolderOpen,
+                label = "Rapihin",
+                onClick = onOrganize,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            QuickActionChip(
+                icon = Icons.Default.ContentCopy,
+                label = "Duplikat",
+                onClick = onDuplicates,
+                modifier = Modifier.weight(1f)
+            )
+            QuickActionChip(
+                icon = Icons.Default.CleaningServices,
+                label = "Sampah",
+                onClick = onCleanJunk,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            "Atau ketik pesan di bawah...",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+fun QuickActionChip(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.height(44.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(label, fontSize = 13.sp)
+    }
+}
+
+@Composable
+fun ChatBubble(message: ChatMessage) {
+    val isUser = message is ChatMessage.User
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+    ) {
+        if (!isUser) {
+            // Agent avatar
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("🤖", fontSize = 16.sp)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        // Message bubble
+        Card(
+            modifier = Modifier.widthIn(max = 280.dp),
+            shape = RoundedCornerShape(
+                topStart = 16.dp,
+                topEnd = 16.dp,
+                bottomStart = if (isUser) 16.dp else 4.dp,
+                bottomEnd = if (isUser) 4.dp else 16.dp
+            ),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isUser) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
+            )
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                when (message) {
+                    is ChatMessage.User -> {
+                        Text(
+                            message.text,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    is ChatMessage.Agent -> {
+                        // Show steps summary if there are tool calls
+                        if (message.steps.isNotEmpty()) {
+                            val toolSteps = message.steps.filter { it.type == StepType.TOOL_CALL }
+                            if (toolSteps.isNotEmpty()) {
+                                Text(
+                                    "📋 ${toolSteps.size} operasi",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+                        }
+
+                        // Main response text
+                        Text(
+                            message.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        // Success/failure indicator
+                        if (!message.success) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "⚠️ Selesai dengan catatan",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AccentOrange
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isUser) {
+            Spacer(modifier = Modifier.width(8.dp))
+            // User avatar
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.tertiary),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("👤", fontSize = 16.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun AgentTypingIndicator() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start
+    ) {
+        // Agent avatar
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("🤖", fontSize = 16.sp)
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Card(
+            shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "Beresin lagi mikir...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ChatInputField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSend: () -> Unit,
+    isEnabled: Boolean
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp),
+                placeholder = {
+                    Text(
+                        "Tanya Beresin...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                enabled = isEnabled,
+                singleLine = false,
+                maxLines = 3,
+                shape = RoundedCornerShape(20.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Send button
+            FilledIconButton(
+                onClick = onSend,
+                enabled = isEnabled && value.isNotBlank(),
+                modifier = Modifier.size(44.dp),
+                shape = CircleShape
+            ) {
+                Icon(
+                    Icons.Default.Send,
+                    contentDescription = "Send",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
     }
 }
 
