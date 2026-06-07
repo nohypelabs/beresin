@@ -87,7 +87,7 @@ fun ExplorerScreen(
                 !hasStoragePermission -> PermissionScreen(onRequestPermission)
                 else -> {
                     when (val state = uiState) {
-                        is ExplorerUiState.Welcome -> WelcomeScreen(
+                        is ExplorerUiState.Welcome -> ExplorerWelcomeScreen(
                             onExplore = { viewModel.startScan() }
                         )
                         is ExplorerUiState.Scanning -> ScanningScreen(
@@ -144,7 +144,7 @@ fun ExplorerScreen(
 // ==================== WELCOME SCREEN ====================
 
 @Composable
-fun WelcomeScreen(onExplore: () -> Unit) {
+fun ExplorerWelcomeScreen(onExplore: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()

@@ -18,9 +18,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aicleaner.ui.screens.MainScreen
+import com.aicleaner.ui.screens.ExplorerScreen
 import com.aicleaner.ui.theme.AIStorageCleanerTheme
-import com.aicleaner.viewmodel.MainViewModel
+import com.aicleaner.viewmodel.ExplorerViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -52,9 +52,9 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val viewModel: MainViewModel = viewModel()
+                    val viewModel: ExplorerViewModel = viewModel()
 
-                    MainScreen(
+                    ExplorerScreen(
                         viewModel = viewModel,
                         hasStoragePermission = hasStoragePermission,
                         onRequestPermission = { requestStoragePermission() }
