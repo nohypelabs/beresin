@@ -12,18 +12,18 @@ app.use(express.json());
 // API Keys from environment (never expose to client)
 const API_KEYS = {
   openai: process.env.OPENAI_API_KEY || '',
-  claude: process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY || '',
+  claude: process.env.CLAUDE_API_KEY || '',
   deepseek: process.env.DEEPSEEK_API_KEY || '',
 };
 
-// MiMo configuration (Anthropic format)
+// MiMo configuration (OpenAI format)
 const MIMO_CONFIG = {
-  baseUrl: process.env.ANTHROPIC_BASE_URL || '',
+  baseUrl: process.env.MIMO_BASE_URL || '',
   model: process.env.MIMO_MODEL || 'MiMo-2.5-Pro',
 };
 
 // Default provider
-const DEFAULT_PROVIDER = process.env.DEFAULT_PROVIDER || 'claude';
+const DEFAULT_PROVIDER = process.env.DEFAULT_PROVIDER || 'openai';
 
 /**
  * Health check endpoint
@@ -41,15 +41,15 @@ app.get('/api/providers', (req, res) => {
   if (API_KEYS.openai) {
     providers.push({
       id: 'openai',
-      name: 'OpenAI',
-      model: 'gpt-4o'
+      name: MIMO_CONFIG.baseUrl ? 'Xiaomi MiMo 2.5 Pro' : 'OpenAI',
+      model: MIMO_CONFIG.model || 'gpt-4o'
     });
   }
   if (API_KEYS.claude) {
     providers.push({
       id: 'claude',
-      name: MIMO_CONFIG.baseUrl ? 'Xiaomi MiMo 2.5 Pro' : 'Claude',
-      model: MIMO_CONFIG.model
+      name: 'Claude',
+      model: 'claude-sonnet-4-20250514'
     });
   }
   if (API_KEYS.deepseek) {
@@ -163,15 +163,11 @@ async function callOpenAI(apiKey, messages, tools, systemPrompt, maxTokens) {
 }
 
 /**
- * Call Claude API (or MiMo Anthropic-compatible)
+ * Call Claude API
  */
 async function callClaude(apiKey, messages, tools, systemPrompt, maxTokens) {
-  // Use MiMo URL if configured, otherwise use Anthropic
-  const baseUrl = MIMO_CONFIG.baseUrl || 'https://api.anthropic.com';
-  const model = MIMO_CONFIG.baseUrl ? MIMO_CONFIG.model : 'claude-sonnet-4-20250514';
-
   const body = {
-    model: model,
+    model: 'claude-sonnet-4-20250514',
     max_tokens: maxTokens,
     messages: []
   };
@@ -222,9 +218,7 @@ async function callClaude(apiKey, messages, tools, systemPrompt, maxTokens) {
     }));
   }
 
-  console.log(`Calling ${model} at ${baseUrl}/v1/messages`);
-
-  const response = await fetch(`${baseUrl}/v1/messages`, {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'x-api-key': apiKey,
@@ -364,13 +358,13 @@ app.listen(PORT, () => {
     console.log(`\n🤖 Xiaomi MiMo 2.5 Pro Configuration:`);
     console.log(`   Base URL: ${MIMO_CONFIG.baseUrl}`);
     console.log(`   Model: ${MIMO_CONFIG.model}`);
-    console.log(`   Format: Anthropic (Claude)`);
+    console.log(`   Format: OpenAI Compatible`);
   }
 
   // Show configured providers
   const configured = [];
-  if (API_KEYS.openai) configured.push('OpenAI');
-  if (API_KEYS.claude) configured.push(MIMO_CONFIG.baseUrl ? 'MiMo (Anthropic)' : 'Claude');
+  if (API_KEYS.openai) configured.push(MIMO_CONFIG.baseUrl ? 'MiMo' : 'OpenAI');
+  if (API_KEYS.claude) configured.push('Claude');
   if (API_KEYS.deepseek) configured.push('DeepSeek');
 
   if (configured.length > 0) {
