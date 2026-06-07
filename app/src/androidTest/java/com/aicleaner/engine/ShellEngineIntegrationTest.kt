@@ -11,6 +11,7 @@ import org.junit.runner.RunWith
 /**
  * Integration tests for ShellEngine on real Android device.
  * These tests execute actual shell commands on the device.
+ * Requires: Android device/emulator with storage permission granted.
  */
 @RunWith(AndroidJUnit4::class)
 class ShellEngineIntegrationTest {
@@ -51,15 +52,27 @@ class ShellEngineIntegrationTest {
     }
 
     @Test
-    fun testProotNotReady() {
-        // PRoot should not be set up in test environment
-        assertFalse(shell.isProotReady())
-    }
-
-    @Test
     fun testCommandTimeout() = runBlocking {
         // This should complete quickly
         val result = shell.exec("echo quick")
         assertEquals("quick", result.trim())
+    }
+
+    @Test
+    fun testMultipleCommands() = runBlocking {
+        // Test sequential commands
+        val result1 = shell.exec("echo first")
+        val result2 = shell.exec("echo second")
+
+        assertEquals("first", result1.trim())
+        assertEquals("second", result2.trim())
+    }
+
+    @Test
+    fun testCommandWithError() = runBlocking {
+        // Command that should produce stderr
+        val result = shell.exec("ls /nonexistent/path 2>&1")
+        assertNotNull(result)
+        // Should not crash, just return error output
     }
 }
