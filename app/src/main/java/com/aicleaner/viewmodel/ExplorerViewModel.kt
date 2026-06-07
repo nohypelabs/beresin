@@ -8,6 +8,7 @@ import com.aicleaner.ai.AgentEngine
 import com.aicleaner.ai.provider.AIProvider
 import com.aicleaner.ai.provider.ClaudeProvider
 import com.aicleaner.ai.provider.OpenAICompatibleProvider
+import com.aicleaner.ai.provider.ServerProvider
 import com.aicleaner.engine.ShellEngine
 import com.aicleaner.scanner.*
 import com.aicleaner.tools.ToolRegistry
@@ -56,7 +57,7 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
 
     // API Config
     private var apiKey = prefs.getString(KEY_API_KEY, "") ?: ""
-    private var providerType = prefs.getString(KEY_PROVIDER, "mimo") ?: "mimo"
+    private var providerType = prefs.getString(KEY_PROVIDER, "server") ?: "server"
     private var model = prefs.getString(KEY_MODEL, "") ?: ""
     private var baseUrl = prefs.getString(KEY_BASE_URL, "") ?: ""
 
@@ -280,9 +281,15 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Create AI provider based on config.
+     * Default: Server provider (no API key needed for user)
      */
     private fun createProvider(): AIProvider {
         return when (providerType) {
+            "server" -> ServerProvider(
+                serverUrl = baseUrl.ifBlank { "http://10.0.2.2:3000" }, // Android emulator localhost
+                provider = model.ifBlank { "openai" },
+                name = "Beresin Server"
+            )
             "mimo" -> OpenAICompatibleProvider(
                 baseUrl = baseUrl.ifBlank { "http://localhost:8000/v1" },
                 apiKey = apiKey.ifBlank { "not-needed" },
