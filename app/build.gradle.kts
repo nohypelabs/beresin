@@ -21,8 +21,7 @@ android {
 
         externalNativeBuild {
             cmake {
-                cppFlags += ""
-                arguments += "-DANDROID_STL=c++_shared"
+                // Only C code, no C++ STL needed
             }
         }
     }
@@ -30,6 +29,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -72,19 +72,19 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.foundation:foundation")
 
     // Network (untuk AI API calls)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // JSON parsing
-    implementation("org.json:json:20231013")
-
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    // DataStore (untuk simpan API key & settings)
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Testing
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }

@@ -3,9 +3,9 @@
     native <methods>;
 }
 
-# Keep OkHttp
+# OkHttp platform dependencies (optional TLS providers)
 -dontwarn okhttp3.**
--keep class okhttp3.** { *; }
-
-# Keep JSON parsing
--keep class org.json.** { *; }
+-dontwarn okhttp3.internal.platform.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**

@@ -17,6 +17,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,10 +38,10 @@ fun MainScreen(
     val setupProgress by viewModel.setupProgress.collectAsState()
     val setupMessage by viewModel.setupMessage.collectAsState()
 
-    // API Key dialog state
+    // API Key dialog state — initialized from ViewModel (persisted)
     var showApiDialog by remember { mutableStateOf(false) }
-    var apiKey by remember { mutableStateOf("") }
-    var selectedProvider by remember { mutableStateOf(AIEngine.Provider.CLAUDE) }
+    var apiKey by remember { mutableStateOf(viewModel.getApiKey()) }
+    var selectedProvider by remember { mutableStateOf(viewModel.getProvider()) }
 
     Scaffold(
         topBar = {
@@ -47,7 +50,7 @@ fun MainScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("🧹", fontSize = 24.sp)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("AI Cleaner")
+                        Text("Beresin")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -84,22 +87,24 @@ fun MainScreen(
                         )
                         is MainViewModel.UiState.Ready -> ReadyScreen(
                             onScan = {
-                                if (apiKey.isEmpty()) showApiDialog = true
+                                if (!viewModel.hasApiKey()) showApiDialog = true
                                 else viewModel.scanStorage()
                             },
                             onOrganize = {
-                                if (apiKey.isEmpty()) showApiDialog = true
+                                if (!viewModel.hasApiKey()) showApiDialog = true
                                 else viewModel.organizeDownloads()
                             }
                         )
                         is MainViewModel.UiState.Scanning -> ScanningScreen(state.message)
                         is MainViewModel.UiState.Result -> ResultScreen(
                             analysis = state.analysis,
+                            title = "📊 Hasil Analisa",
                             onExecute = { viewModel.executeActions(it) },
                             onBack = { viewModel.resetToReady() }
                         )
                         is MainViewModel.UiState.OrganizationPlan -> ResultScreen(
                             analysis = state.plan,
+                            title = "📂 Rencana Organisasi",
                             onExecute = { viewModel.executeActions(it) },
                             onBack = { viewModel.resetToReady() }
                         )
@@ -397,10 +402,11 @@ fun ScanningScreen(message: String) {
 @Composable
 fun ResultScreen(
     analysis: AIEngine.AnalysisResult,
+    title: String = "📊 Hasil Analisa",
     onExecute: (List<AIEngine.CleanAction>) -> Unit,
     onBack: () -> Unit
 ) {
-    var selectedActions by remember { mutableStateOf(analysis.actions.toSet()) }
+    var selectedActions by remember(analysis) { mutableStateOf(analysis.actions.toSet()) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Header
@@ -413,7 +419,7 @@ fun ResultScreen(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    "📊 Hasil Analisa",
+                    title,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -744,13 +750,28 @@ fun ApiKeyDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // API Key input
+                // API Key input (masked by default)
+                var showKey by remember { mutableStateOf(false) }
                 OutlinedTextField(
                     value = key,
                     onValueChange = { key = it },
                     label = { Text("API Key") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    visualTransformation = if (showKey) VisualTransformation.None
+                        else PasswordVisualTransformation(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = KeyboardType.Password
+                    ),
+                    trailingIcon = {
+                        IconButton(onClick = { showKey = !showKey }) {
+                            Icon(
+                                if (showKey) Icons.Default.VisibilityOff
+                                else Icons.Default.Visibility,
+                                contentDescription = if (showKey) "Hide key" else "Show key"
+                            )
+                        }
+                    }
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))

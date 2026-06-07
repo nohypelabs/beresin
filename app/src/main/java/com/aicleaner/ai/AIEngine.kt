@@ -281,10 +281,10 @@ the 'target' is the source folder and 'destination' is the recommended new locat
             })
         }
 
-        val url = "$GEMINI_API_URL?key=${config.apiKey}"
         val request = Request.Builder()
-            .url(url)
+            .url(GEMINI_API_URL)
             .addHeader("Content-Type", "application/json")
+            .addHeader("x-goog-api-key", config.apiKey)
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
 

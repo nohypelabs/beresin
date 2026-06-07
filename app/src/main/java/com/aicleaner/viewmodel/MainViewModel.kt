@@ -1,32 +1,43 @@
 package com.aicleaner.viewmodel
 
 import android.app.Application
-import android.os.Environment
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aicleaner.ai.AIEngine
 import com.aicleaner.engine.ShellEngine
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import java.io.File
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val TAG = "MainViewModel"
+        private const val PREFS_NAME = "beresin_prefs"
+        private const val KEY_API_KEY = "api_key"
+        private const val KEY_PROVIDER = "api_provider"
+        private const val KEY_MODEL = "api_model"
+
+        // Characters that are dangerous in shell commands
+        private val SHELL_META_CHARS = charArrayOf(
+            '\'', '"', '`', '$', ';', '&', '|', '(', ')',
+            '{', '}', '<', '>', '\n', '\r', '\\', '!'
+        )
     }
 
     private val shell = ShellEngine(app)
     private val ai = AIEngine(app)
+    private val prefs = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     // UI State
     private val _uiState = MutableStateFlow<UiState>(UiState.Welcome)
     val uiState: StateFlow<UiState> = _uiState
 
-    // AI Config
-    private var aiConfig = AIEngine.AIConfig()
+    // AI Config (loaded from persistence on init)
+    private var aiConfig: AIEngine.AIConfig = loadSavedConfig()
 
     // Setup progress
     private val _setupProgress = MutableStateFlow(0f)
@@ -35,13 +46,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _setupMessage = MutableStateFlow("")
     val setupMessage: StateFlow<String> = _setupMessage
 
+    // Track setup job for cancellation
+    private var setupJob: Job? = null
+
+    init {
+        // Restore API key from shared prefs
+        val savedKey = prefs.getString(KEY_API_KEY, "") ?: ""
+        if (savedKey.isNotBlank()) {
+            Log.i(TAG, "Restored API key from preferences")
+        }
+    }
+
     /**
-     * Save AI API configuration.
+     * Load saved config from SharedPreferences.
      */
-    fun saveAIConfig(provider: AIEngine.Provider, apiKey: String, model: String = "") {
-        aiConfig = AIEngine.AIConfig(
+    private fun loadSavedConfig(): AIEngine.AIConfig {
+        val key = prefs.getString(KEY_API_KEY, "") ?: ""
+        val providerName = prefs.getString(KEY_PROVIDER, AIEngine.Provider.CLAUDE.name)
+            ?: AIEngine.Provider.CLAUDE.name
+        val model = prefs.getString(KEY_MODEL, "") ?: ""
+
+        val provider = try {
+            AIEngine.Provider.valueOf(providerName)
+        } catch (e: Exception) {
+            AIEngine.Provider.CLAUDE
+        }
+
+        return AIEngine.AIConfig(
             provider = provider,
-            apiKey = apiKey,
+            apiKey = key,
             model = model.ifEmpty {
                 when (provider) {
                     AIEngine.Provider.CLAUDE -> "claude-sonnet-4-20250514"
@@ -51,6 +84,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         )
     }
+
+    /**
+     * Save AI API configuration.
+     */
+    fun saveAIConfig(provider: AIEngine.Provider, apiKey: String, model: String = "") {
+        val finalModel = model.ifEmpty {
+            when (provider) {
+                AIEngine.Provider.CLAUDE -> "claude-sonnet-4-20250514"
+                AIEngine.Provider.OPENAI -> "gpt-4o"
+                AIEngine.Provider.GEMINI -> "gemini-pro"
+            }
+        }
+
+        aiConfig = AIEngine.AIConfig(
+            provider = provider,
+            apiKey = apiKey,
+            model = finalModel
+        )
+
+        // Persist to SharedPreferences
+        prefs.edit()
+            .putString(KEY_API_KEY, apiKey)
+            .putString(KEY_PROVIDER, provider.name)
+            .putString(KEY_MODEL, finalModel)
+            .apply()
+
+        Log.i(TAG, "API config saved for provider: $provider")
+    }
+
+    /**
+     * Check if API key is configured.
+     */
+    fun hasApiKey(): Boolean = aiConfig.apiKey.isNotBlank()
+
+    /**
+     * Get current API key (for UI display).
+     */
+    fun getApiKey(): String = aiConfig.apiKey
+
+    /**
+     * Get current provider.
+     */
+    fun getProvider(): AIEngine.Provider = aiConfig.provider
 
     /**
      * Check if environment is ready, if not start setup.
@@ -67,7 +143,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Start PRoot environment setup.
      */
     fun startSetup() {
-        viewModelScope.launch {
+        setupJob = viewModelScope.launch {
             _uiState.value = UiState.SettingUp
 
             val success = shell.setupEnvironment { message, progress ->
@@ -84,9 +160,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Cancel ongoing setup.
+     */
+    fun cancelSetup() {
+        setupJob?.cancel()
+        setupJob = null
+        _uiState.value = UiState.Ready
+    }
+
+    /**
      * Scan storage and analyze with AI.
      */
     fun scanStorage() {
+        // Guard: API key must be set
+        if (aiConfig.apiKey.isBlank()) {
+            _uiState.value = UiState.Error("Please configure your API key first (tap the 🔑 icon)")
+            return
+        }
+
         viewModelScope.launch {
             _uiState.value = UiState.Scanning("Scanning storage...")
 
@@ -135,7 +226,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // Call AI for analysis
                 val result = ai.analyzeStorage(storageData, aiConfig)
 
-                _uiState.value = UiState.Result(result)
+                // Check for empty results
+                if (result.actions.isEmpty() && result.summary.isBlank()) {
+                    _uiState.value = UiState.Error(
+                        "AI could not identify any cleanup actions. Try again or adjust your scan scope."
+                    )
+                } else {
+                    _uiState.value = UiState.Result(result)
+                }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Scan failed: ${e.message}")
@@ -148,6 +246,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Organize Download folder.
      */
     fun organizeDownloads() {
+        // Guard: API key must be set
+        if (aiConfig.apiKey.isBlank()) {
+            _uiState.value = UiState.Error("Please configure your API key first (tap the 🔑 icon)")
+            return
+        }
+
         viewModelScope.launch {
             _uiState.value = UiState.Scanning("Analyzing Download folder...")
 
@@ -166,7 +270,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 """.trimIndent()
 
                 val result = ai.suggestOrganization(fileList, aiConfig)
-                _uiState.value = UiState.OrganizationPlan(result)
+
+                if (result.actions.isEmpty() && result.summary.isBlank()) {
+                    _uiState.value = UiState.Error(
+                        "AI could not suggest any organization. The Download folder might already be clean!"
+                    )
+                } else {
+                    _uiState.value = UiState.OrganizationPlan(result)
+                }
 
             } catch (e: Exception) {
                 _uiState.value = UiState.Error("Failed: ${e.message}")
@@ -175,46 +286,91 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Execute cleanup actions.
+     * Validate that a path is safe for shell execution.
+     * Rejects paths containing shell metacharacters.
+     */
+    private fun isPathSafe(path: String): Boolean {
+        if (path.isBlank()) return false
+        if (path.any { it in SHELL_META_CHARS }) return false
+        // Must be an absolute path under /sdcard
+        if (!path.startsWith("/sdcard/")) return false
+        // No path traversal
+        if (path.contains("..")) return false
+        return true
+    }
+
+    /**
+     * Execute cleanup actions with proper sanitization.
      */
     fun executeActions(actions: List<AIEngine.CleanAction>) {
+        if (actions.isEmpty()) {
+            _uiState.value = UiState.Error("No actions to execute")
+            return
+        }
+
         viewModelScope.launch {
             _uiState.value = UiState.Executing("Executing cleanup...", 0f)
 
             val results = mutableListOf<String>()
             var completed = 0
+            var failed = 0
 
-            actions.forEach { action ->
-                try {
-                    val result = when (action.type) {
-                        "delete" -> {
-                            shell.smartExec("rm -rf '${action.target}'")
-                            "Deleted: ${action.target}"
+            try {
+                actions.forEach { action ->
+                    try {
+                        // Validate paths before execution
+                        val targetSafe = isPathSafe(action.target)
+                        val destSafe = action.destination.isBlank() || isPathSafe(action.destination)
+
+                        if (!targetSafe) {
+                            results.add("❌ Skipped unsafe path: ${action.target}")
+                            failed++
+                        } else if (!destSafe) {
+                            results.add("❌ Skipped unsafe destination: ${action.destination}")
+                            failed++
+                        } else {
+                            val result = when (action.type) {
+                                "delete" -> {
+                                    shell.exec("rm -rf '${action.target}'")
+                                    "Deleted: ${action.target}"
+                                }
+                                "move", "organize" -> {
+                                    if (action.destination.isBlank()) {
+                                        results.add("❌ No destination for: ${action.target}")
+                                        failed++
+                                        continue
+                                    }
+                                    shell.exec("mkdir -p '${action.destination}' && mv '${action.target}' '${action.destination}'")
+                                    "Moved: ${action.target} → ${action.destination}"
+                                }
+                                else -> {
+                                    results.add("❓ Unknown action: ${action.type}")
+                                    failed++
+                                    continue
+                                }
+                            }
+                            results.add("✅ $result")
                         }
-                        "move" -> {
-                            shell.smartExec("mkdir -p '${action.destination}' && mv '${action.target}' '${action.destination}'")
-                            "Moved: ${action.target} → ${action.destination}"
-                        }
-                        "organize" -> {
-                            shell.smartExec("mkdir -p '${action.destination}' && mv '${action.target}' '${action.destination}'")
-                            "Organized: ${action.target} → ${action.destination}"
-                        }
-                        else -> "Unknown action: ${action.type}"
+                    } catch (e: Exception) {
+                        results.add("❌ Failed: ${action.target} — ${e.message}")
+                        failed++
                     }
-                    results.add("✅ $result")
-                } catch (e: Exception) {
-                    results.add("❌ Failed: ${action.target} — ${e.message}")
+
+                    completed++
+                    val progress = completed.toFloat() / actions.size
+                    _uiState.value = UiState.Executing(
+                        "Processing $completed/${actions.size}...",
+                        progress
+                    )
                 }
 
-                completed++
-                val progress = completed.toFloat() / actions.size
-                _uiState.value = UiState.Executing(
-                    "Processing $completed/${actions.size}...",
-                    progress
-                )
-            }
+                _uiState.value = UiState.CleanupResult(results)
 
-            _uiState.value = UiState.CleanupResult(results)
+            } catch (e: Exception) {
+                // If coroutine was cancelled mid-execution, report partial results
+                results.add("⚠️ Execution interrupted: ${e.message}")
+                _uiState.value = UiState.CleanupResult(results)
+            }
         }
     }
 

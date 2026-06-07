@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <android/log.h>
 
 #define TAG "ShellEngine"
@@ -81,6 +82,39 @@ Java_com_aicleaner_engine_ShellEngine_nativeExec(
 }
 
 /**
+ * Escape single quotes in a string for safe use inside bash single-quoted strings.
+ * Replaces ' with '\'' (end quote, escaped quote, start quote).
+ * Returns a newly allocated string that must be freed by the caller.
+ */
+static char *escape_single_quotes(const char *input) {
+    if (input == NULL) return NULL;
+
+    // Count single quotes
+    size_t count = 0;
+    for (const char *p = input; *p; p++) {
+        if (*p == '\'') count++;
+    }
+
+    // Each ' becomes '\'' (4 chars instead of 1)
+    size_t len = strlen(input);
+    size_t new_len = len + count * 3 + 1;
+    char *escaped = (char *)malloc(new_len);
+    if (escaped == NULL) return NULL;
+
+    char *out = escaped;
+    for (const char *p = input; *p; p++) {
+        if (*p == '\'') {
+            memcpy(out, "'\\''", 4);
+            out += 4;
+        } else {
+            *out++ = *p;
+        }
+    }
+    *out = '\0';
+    return escaped;
+}
+
+/**
  * Execute command with PRoot wrapper.
  * prootPath: path to proot binary
  * rootfsPath: path to ubuntu rootfs
@@ -98,6 +132,23 @@ Java_com_aicleaner_engine_ShellEngine_nativeExecProot(
     const char *rootfs = (*env)->GetStringUTFChars(env, jrootfs, NULL);
     const char *cmd = (*env)->GetStringUTFChars(env, jcmd, NULL);
 
+    // NULL checks for all three strings
+    if (proot == NULL || rootfs == NULL || cmd == NULL) {
+        if (proot) (*env)->ReleaseStringUTFChars(env, jproot, proot);
+        if (rootfs) (*env)->ReleaseStringUTFChars(env, jrootfs, rootfs);
+        if (cmd) (*env)->ReleaseStringUTFChars(env, jcmd, cmd);
+        return (*env)->NewStringUTF(env, "ERROR: GetStringUTFChars failed");
+    }
+
+    // Escape single quotes in the command to prevent injection
+    char *escaped_cmd = escape_single_quotes(cmd);
+    if (escaped_cmd == NULL) {
+        (*env)->ReleaseStringUTFChars(env, jproot, proot);
+        (*env)->ReleaseStringUTFChars(env, jrootfs, rootfs);
+        (*env)->ReleaseStringUTFChars(env, jcmd, cmd);
+        return (*env)->NewStringUTF(env, "ERROR: escape failed");
+    }
+
     char full_cmd[8192];
     snprintf(full_cmd, sizeof(full_cmd),
         "PROOT_NO_SECCOMP=1 %s "
@@ -105,8 +156,10 @@ Java_com_aicleaner_engine_ShellEngine_nativeExecProot(
         "--link2symlink "
         "--cwd=/root "
         "/bin/bash -c '%s' 2>&1",
-        proot, rootfs, cmd
+        proot, rootfs, escaped_cmd
     );
+
+    free(escaped_cmd);
 
     LOGI("Proot exec: %s", cmd);
 
@@ -119,6 +172,14 @@ Java_com_aicleaner_engine_ShellEngine_nativeExecProot(
     }
 
     char *output = (char *)malloc(MAX_OUTPUT);
+    if (output == NULL) {
+        pclose(fp);
+        (*env)->ReleaseStringUTFChars(env, jproot, proot);
+        (*env)->ReleaseStringUTFChars(env, jrootfs, rootfs);
+        (*env)->ReleaseStringUTFChars(env, jcmd, cmd);
+        return (*env)->NewStringUTF(env, "ERROR: malloc failed");
+    }
+
     size_t total = 0;
     char line[4096];
 
@@ -145,6 +206,7 @@ Java_com_aicleaner_engine_ShellEngine_nativeExecProot(
 
 /**
  * Check if a file exists and is executable.
+ * Uses C-level access() instead of system() to prevent command injection.
  */
 JNIEXPORT jboolean JNICALL
 Java_com_aicleaner_engine_ShellEngine_nativeFileExists(
@@ -152,14 +214,17 @@ Java_com_aicleaner_engine_ShellEngine_nativeFileExists(
     jobject thiz,
     jstring jpath
 ) {
+    if (jpath == NULL) {
+        return JNI_FALSE;
+    }
+
     const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
+    if (path == NULL) {
+        return JNI_FALSE;
+    }
 
-    // Use access() to check existence + execute permission
-    char cmd[4096];
-    snprintf(cmd, sizeof(cmd), "test -x %s", path);
-
-    int result = system(cmd);
-    jboolean exists = (result == 0);
+    // Use access() directly — no shell, no injection risk
+    jboolean exists = (access(path, X_OK) == 0) ? JNI_TRUE : JNI_FALSE;
 
     (*env)->ReleaseStringUTFChars(env, jpath, path);
     return exists;
