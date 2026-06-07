@@ -40,24 +40,34 @@
 | Live agent step progress UI | ✅ Done | `bafac0e` |
 | Updated docs & README | ✅ Done | `bafac0e` |
 
-### Phase 5: Testing 🔄 (In Progress)
+### Phase 5: Testing ✅ (2026-06-08)
 | Task | Status | Commit |
 |------|--------|--------|
-| Unit test infrastructure | ✅ Done | - |
-| ToolRegistry tests | ✅ Done | - |
-| StorageTools tests | ✅ Done | - |
-| ShellEngine tests | ✅ Done | - |
-| Integration tests | 🔲 Pending | - |
-| UI tests | 🔲 Pending | - |
+| Unit test infrastructure | ✅ Done | `a84912b` |
+| ToolRegistry tests | ✅ Done | `a84912b` |
+| StorageTools tests | ✅ Done | `a84912b` |
+| ShellEngine tests | ✅ Done | `a84912b` |
+| AgentEngine tests | ✅ Done | `b2b7fbd` |
+| AIProvider tests | ✅ Done | `b2b7fbd` |
+| ViewModel tests | ✅ Done | `b2b7fbd` |
+| Integration tests | ✅ Done | `b2b7fbd` |
 
-### Phase 6: Polish & Release 🔲 (Planned)
+### Phase 6: Polish & UX ✅ (2026-06-08)
+| Task | Status | Commit |
+|------|--------|--------|
+| Chat UI with message history | ✅ Done | `ef035a9` |
+| Inline error handling | ✅ Done | `69eac0c` |
+| Copy response button | ✅ Done | `69eac0c` |
+| Chat bubble animations | ✅ Done | `69eac0c` |
+| Pulsing typing indicator | ✅ Done | `69eac0c` |
+| Quick action chips | ✅ Done | `ef035a9` |
+
+### Phase 7: Release 🔲 (Planned)
 | Task | Status | Notes |
 |------|--------|-------|
-| UI polish & animations | 🔲 Pending | - |
-| Error handling improvements | 🔲 Pending | - |
-| Performance optimization | 🔲 Pending | - |
 | Play Store listing | 🔲 Pending | - |
 | Marketing materials | 🔲 Pending | - |
+| Performance optimization | 🔲 Pending | - |
 
 ---
 
@@ -69,6 +79,9 @@
 | 2 | `e1b3b53` | 2026-06-06 | refactor: rename to 'Beresin' |
 | 3 | `c89025e` | 2026-06-07 | fix: resolve all critical audit findings |
 | 4 | `bafac0e` | 2026-06-07 | refactor: replace PRoot with Agent + Tool System |
+| 5 | `ef035a9` | 2026-06-08 | feat: add Chat UI with message history |
+| 6 | `69eac0c` | 2026-06-08 | feat: Phase 6 Polish & UX improvements |
+| 7 | `b2b7fbd` | 2026-06-08 | feat: Phase 5 Testing - add comprehensive test suite |
 
 ---
 
@@ -90,14 +103,15 @@ v1.1 (bafac0e): ← CURRENT
 
 | Metric | Value |
 |--------|-------|
-| Total files | 28 |
-| Kotlin files | 12 |
+| Total files | 31 |
+| Kotlin files | 15 |
 | C files | 1 |
 | XML resources | 6 |
 | Config files | 5 |
 | Doc files | 3 |
-| Total lines | ~3000 |
-| Test coverage | TBD |
+| Total lines | ~3500 |
+| Test files | 6 |
+| Test cases | 27 |
 
 ---
-Last updated: 2026-06-07
+Last updated: 2026-06-08
