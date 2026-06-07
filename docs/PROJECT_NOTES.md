@@ -5,9 +5,9 @@
 ## 💡 Ide Awal
 Ide muncul dari percakapan tentang membersihkan file sampah di HP Android.
 Ternyata tidak ada satupun app di Play Store yang bisa:
-1. Scan storage dengan AI
-2. Analisa & kategorisasi file otomatis
-3. Execute cleanup commands langsung
+1. Scan storage dengan AI agent
+2. Analisa & kategorisasi file otomatis via multi-step tool execution
+3. Support multiple AI providers (termasuk MiMo lokal)
 
 ## 🎯 Problem Statement
 - Banyak orang Indonesia punya HP storage penuh
@@ -15,46 +15,51 @@ Ternyata tidak ada satupun app di Play Store yang bisa:
 - File manager biasa gak punya AI, cleaner biasa gak smart
 - Termux bisa tapi ribet buat non-tech user
 
-## 💡 Solusi: Self-Contained AI File Manager
+## 💡 Solusi: AI Agent + Tool System
 App Android yang:
-- Bundles PRoot + Ubuntu di dalamnya (gak perlu install app lain)
-- User tinggal tap-tap doang buat setup
-- AI menganalisa storage dan kasih rekomendasi cleanup
-- Execute file operations langsung dari app
+- Menggunakan AI Agent (agentic loop) buat multi-step file operations
+- 8 built-in tools yang jalan di Android shell langsung
+- Support MiMo (lokal, tanpa API key), GPT, Claude, DeepSeek
+- User tinggal ngomong, AI yang kerjain
 
-## 🏗️ Architecture
+## 🏗️ Architecture (Final — v2.0)
 
 ```
-┌─────────────────────────────────────┐
-│          🎨 UI Layer                │
-│   Jetpack Compose, Material3        │
-│   Dashboard, Progress, Results      │
-├─────────────────────────────────────┤
-│          🧠 AI Engine               │
-│   Claude / GPT / Gemini API         │
-│   Natural language → JSON actions    │
-├─────────────────────────────────────┤
-│          ⚙️ Shell Engine             │
-│   Kotlin + JNI (C native)           │
-│   popen() → execute commands        │
-├─────────────────────────────────────┤
-│          🐧 PRoot + Ubuntu           │
-│   Minimal Ubuntu 24.04 rootfs       │
-│   bash, coreutils, find, du, etc    │
-├─────────────────────────────────────┤
-│          📱 Android Native           │
-│   Storage permission (one-time)     │
-│   Kotlin + Jetpack Compose          │
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│              🎨 UI Layer                     │
+│         Jetpack Compose + Material3          │
+│   Welcome → Ready → AgentRunning → Result    │
+├─────────────────────────────────────────────┤
+│              🧠 AI Agent Engine              │
+│   Agentic loop: plan → tool call → observe   │
+│   Max 20 iterations, auto-stop               │
+├─────────────────────────────────────────────┤
+│              🔧 Tool Registry                │
+│   8 tools: list_dir, find, delete, move,     │
+│   copy, get_info, storage_summary, exec      │
+│   All tools validate paths (must be /sdcard) │
+├─────────────────────────────────────────────┤
+│              🤖 AI Providers                 │
+│   OpenAICompatibleProvider (MiMo/GPT/DS)     │
+│   ClaudeProvider (Anthropic API)             │
+│   Unified interface via AIProvider           │
+├─────────────────────────────────────────────┤
+│              ⚙️ Shell Engine                  │
+│   JNI native (C) + Kotlin fallback           │
+│   Runtime.exec("sh -c ...")                  │
+│   Storage permission (one-time)              │
+└─────────────────────────────────────────────┘
+
+No PRoot! Direct Android shell access.
 ```
 
 ## 🔧 Tech Stack
 - **Language**: Kotlin + C (JNI)
 - **UI**: Jetpack Compose + Material3
-- **Build**: Gradle + CMake (NDK)
+- **Build**: Gradle 8.11.1 + CMake 3.22.1
 - **Network**: OkHttp3
-- **AI API**: Claude / OpenAI / Gemini
-- **Shell**: PRoot + Ubuntu 24.04 ARM64
+- **AI**: Multi-provider (OpenAI format + Claude format)
+- **Shell**: Android native shell (no PRoot)
 
 ## 📦 Dependencies
 - androidx.core:core-ktx:1.15.0
@@ -62,65 +67,74 @@ App Android yang:
 - androidx.lifecycle:lifecycle-runtime-ktx:2.8.7
 - com.squareup.okhttp3:okhttp:4.12.0
 - org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0
-- androidx.datastore:datastore-preferences:1.1.1
+- junit:junit:4.13.2 (test)
+- androidx.test.ext:junit:1.2.1 (androidTest)
+- androidx.test.espresso:espresso-core:3.6.1 (androidTest)
 
 ## 🔐 Permissions
-- READ_EXTERNAL_STORAGE / WRITE_EXTERNAL_STORAGE
+- READ_EXTERNAL_STORAGE (max SDK 32)
 - MANAGE_EXTERNAL_STORAGE (Android 11+)
 - INTERNET
 
-## 📱 Target
+## 🎯 Target
 - **Min SDK**: Android 8.0 (API 26)
 - **Target SDK**: Android 15 (API 35)
-- **Architecture**: ARM64 (primary), ARMv7, x86_64
+- **Architecture**: ARM64 (primary), ARMv7
 - **Market**: Indonesia (270jt+ population)
 
+## 🤖 Supported AI Providers
+| Provider | Model | API Key | Local? |
+|----------|-------|---------|--------|
+| Xiaomi MiMo | MiMo-7B-RL | Optional | ✅ (via vLLM) |
+| OpenAI | GPT-4o | Required | ❌ |
+| Claude | Claude Sonnet | Required | ❌ |
+| DeepSeek | DeepSeek Chat | Required | ❌ |
+| Custom | Any OpenAI-compat | Depends | Depends |
+
+## 🔧 Available Tools
+1. `list_directory` — List files with sizes
+2. `find_files` — Find by name/size/type
+3. `get_file_info` — Detailed file info
+4. `delete_file` — Delete files/dirs
+5. `move_file` — Move/rename
+6. `copy_file` — Copy files
+7. `get_storage_summary` — Overall storage overview
+8. `execute_shell` — Read-only commands (whitelist)
+
 ## 🎯 Kompetitor
-| App | AI? | File Ops? | Self-contained? |
-|-----|-----|-----------|-----------------|
+| App | AI Agent? | Tools? | Self-contained? |
+|-----|-----------|--------|-----------------|
 | Files by Google | ML only | Limited | ✅ |
 | CCleaner | ❌ | Basic | ✅ |
-| Termux | ❌ | Full | ❌ (need install) |
-| **Our App** | ✅ Full AI | ✅ Full | ✅ |
+| Termux | ❌ | Full shell | ❌ (need install) |
+| **Beresin** | ✅ Multi-step | ✅ 8 tools | ✅ |
 
-## 🚀 MVP Features (v1.0)
-- [x] PRoot + Ubuntu auto-setup
-- [x] Storage scan & analysis
-- [x] AI-powered cleanup recommendations
-- [x] Organize Download folder
-- [x] Execute cleanup actions
-- [x] Support 3 AI providers
+## ✅ MVP Checklist (v1.0)
+- [x] Shell engine (JNI + Kotlin)
+- [x] AI Agent Engine (agentic loop)
+- [x] 8 storage tools
+- [x] Multi-provider support (MiMo, GPT, Claude, DeepSeek)
+- [x] UI screens (Welcome, Ready, AgentRunning, Result)
+- [x] Settings dialog (provider + API key)
+- [x] Storage permission handling
+- [x] Path security validation
+- [x] Unit test infrastructure
+- [x] Documentation
 
 ## 📋 Future Features (v1.1+)
-- [ ] Duplicate file detection (MD5 hash)
-- [ ] Photo cleaner (blurry/duplicate detection)
+- [ ] Photo cleaner (AI detect blurry/duplicate)
 - [ ] App cache cleaner
 - [ ] Scheduled cleanup
 - [ ] Cloud backup before delete
 - [ ] Home screen widget
-- [ ] Indonesian language support
+- [ ] Indonesian language support (bahasa UI)
 - [ ] Dark mode improvements
+- [ ] Voice input
 
 ## 💰 Monetization Ideas
 - **Freemium**: Free 10 scans/month, premium unlimited
 - **One-time purchase**: Rp 29.000 - 49.000
-- **Subscription**: Rp 9.900/month
 - **API key model**: User brings their own API key (current model)
 
-## 📅 Timeline
-- **Day 1-3**: Core engine (Shell + PRoot) ✅
-- **Day 4-7**: AI integration ✅
-- **Day 8-12**: UI screens ✅
-- **Day 13-15**: Testing & polish
-- **Day 16-17**: Play Store listing
-- **Day 18+**: Marketing & user feedback
-
-## 📝 Notes
-- PRoot is open source (GPLv2) — need to comply with license
-- Ubuntu rootfs is ~8MB compressed, downloaded on first launch
-- Google Play might flag MANAGE_EXTERNAL_STORAGE — prepare appeal
-- API key stored locally, never sent to our servers
-- Consider using Termux's terminal-emulator library as reference
-
 ---
-Last updated: 2026-06-06
+Last updated: 2026-06-07
