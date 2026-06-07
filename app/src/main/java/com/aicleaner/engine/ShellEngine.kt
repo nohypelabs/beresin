@@ -13,13 +13,26 @@ import java.io.File
  * 1. Direct exec (Runtime.exec) — fast, no PRoot needed for simple commands
  * 2. PRoot exec (via JNI) — full Linux environment for complex operations
  */
-class ShellEngine(private val context: Context) {
+open class ShellEngine(private val context: Context) {
+
+    init {
+        loadNative()
+    }
 
     companion object {
         private const val TAG = "ShellEngine"
 
-        init {
-            System.loadLibrary("shell-engine")
+        private var nativeLoaded = false
+
+        fun loadNative() {
+            if (!nativeLoaded) {
+                try {
+                    System.loadLibrary("shell-engine")
+                    nativeLoaded = true
+                } catch (e: UnsatisfiedLinkError) {
+                    Log.w(TAG, "Native library not available: ${e.message}")
+                }
+            }
         }
     }
 

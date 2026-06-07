@@ -2,7 +2,6 @@ package com.aicleaner.tools
 
 import com.aicleaner.ai.provider.ToolDefinition
 import com.aicleaner.ai.provider.ToolCall
-import com.aicleaner.ai.provider.ToolResult
 import com.aicleaner.engine.ShellEngine
 import org.json.JSONObject
 

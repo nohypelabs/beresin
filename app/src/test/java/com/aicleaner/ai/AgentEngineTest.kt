@@ -5,6 +5,7 @@ import com.aicleaner.tools.ToolRegistry
 import com.aicleaner.tools.ToolResult
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -25,6 +26,11 @@ class AgentEngineTest {
 
         // Mock tool definitions
         `when`(mockTools.getToolDefinitions()).thenReturn(emptyList())
+    }
+
+    @After
+    fun tearDown() {
+        org.mockito.Mockito.reset(mockTools)
     }
 
     @Test
@@ -70,7 +76,7 @@ class AgentEngineTest {
         )
 
         // Mock tool execution
-        `when`(mockTools.execute(any())).thenReturn(
+        `when`(mockTools.execute(anyNonNull())).thenReturn(
             ToolResult(true, "file1.txt\nfile2.txt")
         )
 
@@ -112,7 +118,7 @@ class AgentEngineTest {
         )
 
         // Mock tool execution failure
-        `when`(mockTools.execute(any())).thenReturn(
+        `when`(mockTools.execute(anyNonNull())).thenReturn(
             ToolResult(false, "", "Permission denied")
         )
 
@@ -147,7 +153,7 @@ class AgentEngineTest {
             }
         }
 
-        `when`(mockTools.execute(any())).thenReturn(
+        `when`(mockTools.execute(anyNonNull())).thenReturn(
             ToolResult(true, "file.txt")
         )
 
@@ -199,6 +205,15 @@ class AgentEngineTest {
         assertTrue(receivedRequest!!.systemPrompt?.contains("Beresin") == true)
         assertTrue(receivedRequest!!.systemPrompt?.contains("/sdcard") == true)
     }
+}
+
+/**
+ * Helper to fix Mockito any() returning null in Kotlin.
+ */
+private fun <T> anyNonNull(): T {
+    org.mockito.ArgumentMatchers.any<T>()
+    @Suppress("UNCHECKED_CAST")
+    return null as T
 }
 
 /**
