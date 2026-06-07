@@ -286,6 +286,7 @@ async function callDeepSeek(apiKey, messages, tools, systemPrompt, maxTokens) {
 
 /**
  * Parse OpenAI response to unified format
+ * Supports MiMo reasoning_content field
  */
 function parseOpenAIResponse(data) {
   const choice = data.choices?.[0];
@@ -306,8 +307,11 @@ function parseOpenAIResponse(data) {
     }
   }
 
+  // MiMo has reasoning_content field
+  const text = message.content || message.reasoning_content || '';
+
   return {
-    text: message.content || '',
+    text,
     toolCalls,
     usage: data.usage ? {
       inputTokens: data.usage.prompt_tokens,
