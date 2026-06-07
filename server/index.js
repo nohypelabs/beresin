@@ -16,6 +16,12 @@ const API_KEYS = {
   deepseek: process.env.DEEPSEEK_API_KEY || '',
 };
 
+// MiMo configuration
+const MIMO_CONFIG = {
+  baseUrl: process.env.MIMO_BASE_URL || '',
+  model: process.env.MIMO_MODEL || 'MiMo-7B-RL',
+};
+
 // Default provider
 const DEFAULT_PROVIDER = process.env.DEFAULT_PROVIDER || 'openai';
 
@@ -32,7 +38,13 @@ app.get('/health', (req, res) => {
 app.get('/api/providers', (req, res) => {
   const providers = [];
 
-  if (API_KEYS.openai) providers.push({ id: 'openai', name: 'OpenAI', model: 'gpt-4o' });
+  if (API_KEYS.openai) {
+    providers.push({
+      id: 'openai',
+      name: MIMO_CONFIG.baseUrl ? 'Xiaomi MiMo' : 'OpenAI',
+      model: MIMO_CONFIG.baseUrl ? MIMO_CONFIG.model : 'gpt-4o'
+    });
+  }
   if (API_KEYS.claude) providers.push({ id: 'claude', name: 'Claude', model: 'claude-sonnet-4-20250514' });
   if (API_KEYS.deepseek) providers.push({ id: 'deepseek', name: 'DeepSeek', model: 'deepseek-chat' });
 
@@ -83,11 +95,15 @@ app.post('/api/chat', async (req, res) => {
 });
 
 /**
- * Call OpenAI API
+ * Call OpenAI-compatible API (OpenAI, MiMo, etc.)
  */
 async function callOpenAI(apiKey, messages, tools, systemPrompt, maxTokens) {
+  // Use MiMo config if baseUrl is set, otherwise use OpenAI
+  const baseUrl = MIMO_CONFIG.baseUrl || 'https://api.openai.com/v1';
+  const model = MIMO_CONFIG.baseUrl ? MIMO_CONFIG.model : 'gpt-4o';
+
   const body = {
-    model: 'gpt-4o',
+    model: model,
     max_tokens: maxTokens,
     temperature: 0.3,
     messages: []
@@ -114,7 +130,9 @@ async function callOpenAI(apiKey, messages, tools, systemPrompt, maxTokens) {
     body.tool_choice = 'auto';
   }
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  console.log(`Calling ${model} at ${baseUrl}/chat/completions`);
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,
@@ -125,7 +143,7 @@ async function callOpenAI(apiKey, messages, tools, systemPrompt, maxTokens) {
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} - ${error}`);
+    throw new Error(`API error: ${response.status} - ${error}`);
   }
 
   const data = await response.json();
@@ -323,9 +341,15 @@ app.listen(PORT, () => {
   console.log(`📋 Health check: http://localhost:${PORT}/health`);
   console.log(`🤖 Chat endpoint: POST http://localhost:${PORT}/api/chat`);
 
+  // Show MiMo config
+  if (MIMO_CONFIG.baseUrl) {
+    console.log(`🤖 MiMo server: ${MIMO_CONFIG.baseUrl}`);
+    console.log(`📦 MiMo model: ${MIMO_CONFIG.model}`);
+  }
+
   // Show configured providers
   const configured = [];
-  if (API_KEYS.openai) configured.push('OpenAI');
+  if (API_KEYS.openai) configured.push(MIMO_CONFIG.baseUrl ? 'MiMo' : 'OpenAI');
   if (API_KEYS.claude) configured.push('Claude');
   if (API_KEYS.deepseek) configured.push('DeepSeek');
 
