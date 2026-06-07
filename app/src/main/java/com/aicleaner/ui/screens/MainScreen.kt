@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,7 +24,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.aicleaner.ai.AIEngine
+import com.aicleaner.ai.AgentStep
+import com.aicleaner.ai.StepType
 import com.aicleaner.ui.theme.*
 import com.aicleaner.viewmodel.MainViewModel
 
@@ -35,13 +37,7 @@ fun MainScreen(
     onRequestPermission: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val setupProgress by viewModel.setupProgress.collectAsState()
-    val setupMessage by viewModel.setupMessage.collectAsState()
-
-    // API Key dialog state — initialized from ViewModel (persisted)
-    var showApiDialog by remember { mutableStateOf(false) }
-    var apiKey by remember { mutableStateOf(viewModel.getApiKey()) }
-    var selectedProvider by remember { mutableStateOf(viewModel.getProvider()) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -58,10 +54,10 @@ fun MainScreen(
                     titleContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
-                    IconButton(onClick = { showApiDialog = true }) {
+                    IconButton(onClick = { showSettingsDialog = true }) {
                         Icon(
-                            Icons.Default.Key,
-                            contentDescription = "API Settings",
+                            Icons.Default.Settings,
+                            contentDescription = "Settings",
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
@@ -79,41 +75,22 @@ fun MainScreen(
                 else -> {
                     when (val state = uiState) {
                         is MainViewModel.UiState.Welcome -> WelcomeScreen(
-                            onSetup = { viewModel.checkAndSetup() }
-                        )
-                        is MainViewModel.UiState.SettingUp -> SetupScreen(
-                            progress = setupProgress,
-                            message = setupMessage
+                            onStart = { viewModel.checkAndSetup() }
                         )
                         is MainViewModel.UiState.Ready -> ReadyScreen(
-                            onScan = {
-                                if (!viewModel.hasApiKey()) showApiDialog = true
-                                else viewModel.scanStorage()
-                            },
-                            onOrganize = {
-                                if (!viewModel.hasApiKey()) showApiDialog = true
-                                else viewModel.organizeDownloads()
-                            }
+                            onScan = { viewModel.scanStorage() },
+                            onOrganize = { viewModel.organizeDownloads() },
+                            onDuplicates = { viewModel.findDuplicates() },
+                            onCleanJunk = { viewModel.cleanJunk() },
+                            hasApiKey = viewModel.hasApiKey()
                         )
-                        is MainViewModel.UiState.Scanning -> ScanningScreen(state.message)
-                        is MainViewModel.UiState.Result -> ResultScreen(
-                            analysis = state.analysis,
-                            title = "📊 Hasil Analisa",
-                            onExecute = { viewModel.executeActions(it) },
-                            onBack = { viewModel.resetToReady() }
-                        )
-                        is MainViewModel.UiState.OrganizationPlan -> ResultScreen(
-                            analysis = state.plan,
-                            title = "📂 Rencana Organisasi",
-                            onExecute = { viewModel.executeActions(it) },
-                            onBack = { viewModel.resetToReady() }
-                        )
-                        is MainViewModel.UiState.Executing -> ExecutingScreen(
+                        is MainViewModel.UiState.AgentRunning -> AgentRunningScreen(
                             message = state.message,
-                            progress = state.progress
+                            steps = state.steps,
+                            onCancel = { viewModel.cancelAgent() }
                         )
-                        is MainViewModel.UiState.CleanupResult -> CleanupResultScreen(
-                            results = state.results,
+                        is MainViewModel.UiState.AgentResult -> AgentResultScreen(
+                            result = state.result,
                             onDone = { viewModel.resetToReady() }
                         )
                         is MainViewModel.UiState.Error -> ErrorScreen(
@@ -126,17 +103,17 @@ fun MainScreen(
         }
     }
 
-    // API Key Dialog
-    if (showApiDialog) {
-        ApiKeyDialog(
-            currentKey = apiKey,
-            currentProvider = selectedProvider,
-            onDismiss = { showApiDialog = false },
-            onSave = { key, provider ->
-                apiKey = key
-                selectedProvider = provider
-                viewModel.saveAIConfig(provider, key)
-                showApiDialog = false
+    // Settings Dialog
+    if (showSettingsDialog) {
+        SettingsDialog(
+            currentProvider = viewModel.getProviderType(),
+            currentKey = viewModel.getApiKey(),
+            currentModel = viewModel.getModel(),
+            currentBaseUrl = viewModel.getBaseUrl(),
+            onDismiss = { showSettingsDialog = false },
+            onSave = { provider, key, model, baseUrl ->
+                viewModel.saveConfig(provider, key, model, baseUrl)
+                showSettingsDialog = false
             }
         )
     }
@@ -167,7 +144,7 @@ fun PermissionScreen(onRequestPermission: () -> Unit) {
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            "AI Cleaner butuh akses storage untuk scan dan bersihkan file HP kamu.",
+            "Beresin butuh akses storage untuk scan dan bersihkan file HP kamu.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -188,7 +165,7 @@ fun PermissionScreen(onRequestPermission: () -> Unit) {
 }
 
 @Composable
-fun WelcomeScreen(onSetup: () -> Unit) {
+fun WelcomeScreen(onStart: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -199,82 +176,45 @@ fun WelcomeScreen(onSetup: () -> Unit) {
         Text("🧹", fontSize = 80.sp)
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            "AI Storage Cleaner",
+            "Beresin",
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold
         )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "\"Beresin HP lu!\"",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Medium
+        )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            "Bersihin storage HP kamu pake AI.\nScan, analisa, dan rapihin otomatis!",
+            "AI-powered storage cleaner.\nScan, analisa, dan rapihin otomatis!",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(48.dp))
         Button(
-            onClick = onSetup,
+            onClick = onStart,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text("Mulai Setup", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("Mulai", fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            "Setup sekali aja, butuh internet",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
 @Composable
-fun SetupScreen(progress: Float, message: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        CircularProgressIndicator(
-            progress = { progress },
-            modifier = Modifier.size(80.dp),
-            strokeWidth = 6.dp
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            "Setting up...",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            message,
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "${(progress * 100).toInt()}%",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-    }
-}
-
-@Composable
-fun ReadyScreen(onScan: () -> Unit, onOrganize: () -> Unit) {
+fun ReadyScreen(
+    onScan: () -> Unit,
+    onOrganize: () -> Unit,
+    onDuplicates: () -> Unit,
+    onCleanJunk: () -> Unit,
+    hasApiKey: Boolean
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -292,9 +232,31 @@ fun ReadyScreen(onScan: () -> Unit, onOrganize: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        if (!hasApiKey) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Warning, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Tap ⚙️ untuk set API key dulu ya",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Scan Storage Button
+        // Action cards
         ActionCard(
             icon = Icons.Default.Search,
             title = "Scan Storage",
@@ -303,15 +265,34 @@ fun ReadyScreen(onScan: () -> Unit, onOrganize: () -> Unit) {
             onClick = onScan
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Organize Downloads Button
         ActionCard(
             icon = Icons.Default.FolderOpen,
             title = "Rapihin Download",
-            description = "Kategorisasi file di folder Download otomatis",
+            description = "Kategorisasi file di Download otomatis",
             gradient = Brush.horizontalGradient(listOf(AccentGreen, AccentGreenLight)),
             onClick = onOrganize
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        ActionCard(
+            icon = Icons.Default.ContentCopy,
+            title = "Cari Duplikat",
+            description = "Temukan file duplikat yang makan tempat",
+            gradient = Brush.horizontalGradient(listOf(AccentOrange, AccentOrangeLight)),
+            onClick = onDuplicates
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        ActionCard(
+            icon = Icons.Default.CleaningServices,
+            title = "Bersihin Sampah",
+            description = "Hapus file .tmp, .cache, .log, APK lama",
+            gradient = Brush.horizontalGradient(listOf(AccentRed, AccentRedLight)),
+            onClick = onCleanJunk
         )
     }
 }
@@ -328,20 +309,20 @@ fun ActionCard(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp),
-        shape = RoundedCornerShape(20.dp),
+            .height(100.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(56.dp)
                     .clip(CircleShape)
                     .background(gradient),
                 contentAlignment = Alignment.Center
@@ -350,20 +331,20 @@ fun ActionCard(
                     icon,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(28.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(20.dp))
+            Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(
                     title,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     description,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -372,41 +353,19 @@ fun ActionCard(
 }
 
 @Composable
-fun ScanningScreen(message: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(64.dp),
-            strokeWidth = 5.dp
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            message,
-            style = MaterialTheme.typography.titleLarge,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "Tunggu sebentar...",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-fun ResultScreen(
-    analysis: AIEngine.AnalysisResult,
-    title: String = "📊 Hasil Analisa",
-    onExecute: (List<AIEngine.CleanAction>) -> Unit,
-    onBack: () -> Unit
+fun AgentRunningScreen(
+    message: String,
+    steps: List<AgentStep>,
+    onCancel: () -> Unit
 ) {
-    var selectedActions by remember(analysis) { mutableStateOf(analysis.actions.toSet()) }
+    val listState = rememberLazyListState()
+
+    // Auto-scroll to bottom
+    LaunchedEffect(steps.size) {
+        if (steps.isNotEmpty()) {
+            listState.animateScrollToItem(steps.size - 1)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Header
@@ -415,202 +374,128 @@ fun ResultScreen(
                 .fillMaxWidth()
                 .padding(16.dp),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(analysis.summary, style = MaterialTheme.typography.bodyMedium)
-                if (analysis.totalWaste > 0) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "💾 Total sampah: ${formatSize(analysis.totalWaste)}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = AccentRed
-                    )
-                }
-            }
-        }
-
-        // Actions list
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(analysis.actions) { action ->
-                val isSelected = action in selectedActions
-                ActionItem(
-                    action = action,
-                    isSelected = isSelected,
-                    onToggle = {
-                        selectedActions = if (isSelected) {
-                            selectedActions - action
-                        } else {
-                            selectedActions + action
-                        }
-                    }
-                )
-            }
-        }
-
-        // Bottom buttons
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            OutlinedButton(
-                onClick = onBack,
-                modifier = Modifier.weight(1f).height(52.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Kembali")
-            }
-            Button(
-                onClick = { onExecute(selectedActions.toList()) },
-                modifier = Modifier.weight(2f).height(52.dp),
-                shape = RoundedCornerShape(12.dp),
-                enabled = selectedActions.isNotEmpty()
-            ) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Jalankan (${selectedActions.size})")
-            }
-        }
-    }
-}
-
-@Composable
-fun ActionItem(
-    action: AIEngine.CleanAction,
-    isSelected: Boolean,
-    onToggle: () -> Unit
-) {
-    Card(
-        onClick = onToggle,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.surface
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Checkbox(
-                checked = isSelected,
-                onCheckedChange = { onToggle() }
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        when (action.type) {
-                            "delete" -> "🗑️"
-                            "move" -> "📁"
-                            "organize" -> "📂"
-                            else -> "📄"
-                        },
-                        fontSize = 20.sp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        action.type.uppercase(),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = when (action.type) {
-                            "delete" -> AccentRed
-                            "move" -> AccentOrange
-                            "organize" -> AccentGreen
-                            else -> MaterialTheme.colorScheme.onSurface
-                        }
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    action.target.substringAfterLast("/").take(50),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 3.dp
                 )
-                if (action.reason.isNotEmpty()) {
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        action.reason,
+                        "🤖 AI sedang bekerja...",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        message,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (action.sizeBytes > 0) {
-                    Text(
-                        formatSize(action.sizeBytes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = AccentOrange
+            }
+        }
+
+        // Steps list
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(steps) { step ->
+                StepItem(step)
+            }
+        }
+
+        // Cancel button
+        OutlinedButton(
+            onClick = onCancel,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .height(48.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(Icons.Default.Close, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Batalkan")
+        }
+    }
+}
+
+@Composable
+fun StepItem(step: AgentStep) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                step.success == true -> AccentGreenLight
+                step.success == false -> AccentRedLight
+                step.type == StepType.TOOL_CALL -> MaterialTheme.colorScheme.surfaceVariant
+                else -> MaterialTheme.colorScheme.surface
+            }
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon
+            when {
+                step.type == StepType.RESPONSE -> {
+                    Text("💬", modifier = Modifier.padding(end = 8.dp))
+                }
+                step.success == true -> {
+                    Text("✅", modifier = Modifier.padding(end = 8.dp))
+                }
+                step.success == false -> {
+                    Text("❌", modifier = Modifier.padding(end = 8.dp))
+                }
+                else -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp).padding(end = 8.dp),
+                        strokeWidth = 2.dp
                     )
                 }
+            }
+
+            // Content
+            Column(modifier = Modifier.weight(1f)) {
+                if (step.toolName != null) {
+                    Text(
+                        step.toolName,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Text(
+                    step.content,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2
+                )
             }
         }
     }
 }
 
 @Composable
-fun ExecutingScreen(message: String, progress: Float) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            Icons.Default.CleaningServices,
-            contentDescription = null,
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            "Membersihkan...",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            message,
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        LinearProgressIndicator(
-            progress = { progress },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp)
-                .clip(RoundedCornerShape(6.dp))
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "${(progress * 100).toInt()}%",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-fun CleanupResultScreen(results: List<String>, onDone: () -> Unit) {
+fun AgentResultScreen(
+    result: com.aicleaner.ai.AgentResult,
+    onDone: () -> Unit
+) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Header
         Card(
@@ -618,38 +503,47 @@ fun CleanupResultScreen(results: List<String>, onDone: () -> Unit) {
                 .fillMaxWidth()
                 .padding(16.dp),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = AccentGreenLight)
+            colors = CardDefaults.cardColors(
+                containerColor = if (result.success) AccentGreenLight
+                    else AccentOrangeLight
+            )
         ) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("🎉", fontSize = 48.sp)
-                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Selesai!",
-                    style = MaterialTheme.typography.headlineMedium,
+                    if (result.success) "🎉 Selesai!" else "⚠️ Selesai dengan catatan",
+                    style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "${results.count { it.startsWith("✅") }} berhasil, ${results.count { it.startsWith("❌") }} gagal",
-                    style = MaterialTheme.typography.bodyLarge
+                    "${result.iterations} langkah • ${result.steps.size} operasi",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        // Results list
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        // Final response
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .weight(1f),
+            shape = RoundedCornerShape(12.dp)
         ) {
-            items(results) { result ->
-                Text(
-                    result,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(vertical = 2.dp)
-                )
+            LazyColumn(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                item {
+                    Text(
+                        result.finalResponse,
+                        style = MaterialTheme.typography.bodyMedium,
+                        lineHeight = 24.sp
+                    )
+                }
             }
         }
 
@@ -709,77 +603,124 @@ fun ErrorScreen(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-fun ApiKeyDialog(
+fun SettingsDialog(
+    currentProvider: String,
     currentKey: String,
-    currentProvider: AIEngine.Provider,
+    currentModel: String,
+    currentBaseUrl: String,
     onDismiss: () -> Unit,
-    onSave: (String, AIEngine.Provider) -> Unit
+    onSave: (provider: String, key: String, model: String, baseUrl: String) -> Unit
 ) {
-    var key by remember { mutableStateOf(currentKey) }
     var provider by remember { mutableStateOf(currentProvider) }
+    var key by remember { mutableStateOf(currentKey) }
+    var model by remember { mutableStateOf(currentModel) }
+    var baseUrl by remember { mutableStateOf(currentBaseUrl) }
+    var showKey by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("🔑 AI API Settings") },
+        title = { Text("⚙️ Pengaturan AI") },
         text = {
             Column {
                 Text(
-                    "Pilih AI provider dan masukkan API key:",
-                    style = MaterialTheme.typography.bodyMedium
+                    "Pilih AI provider:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Provider selection
-                Text("Provider:", fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AIEngine.Provider.entries.forEach { p ->
-                        FilterChip(
-                            selected = provider == p,
-                            onClick = { provider = p },
-                            label = {
-                                Text(when (p) {
-                                    AIEngine.Provider.CLAUDE -> "Claude"
-                                    AIEngine.Provider.OPENAI -> "GPT"
-                                    AIEngine.Provider.GEMINI -> "Gemini"
-                                })
-                            }
+                val providers = listOf(
+                    "mimo" to "🤖 Xiaomi MiMo",
+                    "openai" to "🧠 OpenAI GPT",
+                    "claude" to "🎭 Claude",
+                    "deepseek" to "🔮 DeepSeek",
+                    "custom" to "🔧 Custom API"
+                )
+
+                providers.forEach { (id, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = provider == id,
+                            onClick = { provider = id }
                         )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // API Key input (masked by default)
-                var showKey by remember { mutableStateOf(false) }
+                // Model input
                 OutlinedTextField(
-                    value = key,
-                    onValueChange = { key = it },
-                    label = { Text("API Key") },
+                    value = model,
+                    onValueChange = { model = it },
+                    label = { Text("Model (opsional)") },
+                    placeholder = {
+                        Text(when (provider) {
+                            "mimo" -> "MiMo-7B-RL"
+                            "openai" -> "gpt-4o"
+                            "claude" -> "claude-sonnet-4-20250514"
+                            "deepseek" -> "deepseek-chat"
+                            else -> "model-name"
+                        })
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    visualTransformation = if (showKey) VisualTransformation.None
-                        else PasswordVisualTransformation(),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = KeyboardType.Password
-                    ),
-                    trailingIcon = {
-                        IconButton(onClick = { showKey = !showKey }) {
-                            Icon(
-                                if (showKey) Icons.Default.VisibilityOff
-                                else Icons.Default.Visibility,
-                                contentDescription = if (showKey) "Hide key" else "Show key"
-                            )
-                        }
-                    }
+                    singleLine = true
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                // Base URL for MiMo / Custom
+                if (provider == "mimo" || provider == "custom") {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { baseUrl = it },
+                        label = { Text("API URL") },
+                        placeholder = {
+                            Text(if (provider == "mimo") "http://your-server:8000/v1"
+                                 else "https://api.example.com/v1")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+
+                // API Key (not needed for local MiMo)
+                if (provider != "mimo" || baseUrl.contains("https://")) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = key,
+                        onValueChange = { key = it },
+                        label = { Text("API Key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = if (showKey) VisualTransformation.None
+                            else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showKey = !showKey }) {
+                                Icon(
+                                    if (showKey) Icons.Default.VisibilityOff
+                                    else Icons.Default.Visibility,
+                                    contentDescription = null
+                                )
+                            }
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     when (provider) {
-                        AIEngine.Provider.CLAUDE -> "Get key: console.anthropic.com"
-                        AIEngine.Provider.OPENAI -> "Get key: platform.openai.com"
-                        AIEngine.Provider.GEMINI -> "Get key: makersuite.google.com"
+                        "mimo" -> "💡 MiMo bisa jalan lokal tanpa API key kalau di-host sendiri"
+                        "openai" -> "Get key: platform.openai.com"
+                        "claude" -> "Get key: console.anthropic.com"
+                        "deepseek" -> "Get key: platform.deepseek.com"
+                        else -> "Masukkan URL dan API key custom provider"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -788,8 +729,11 @@ fun ApiKeyDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onSave(key, provider) },
-                enabled = key.isNotBlank()
+                onClick = { onSave(provider, key, model, baseUrl) },
+                enabled = when (provider) {
+                    "mimo" -> baseUrl.isNotBlank() || model.isNotBlank()
+                    else -> key.isNotBlank()
+                }
             ) {
                 Text("Simpan")
             }
@@ -800,15 +744,4 @@ fun ApiKeyDialog(
             }
         }
     )
-}
-
-// ==================== HELPERS ====================
-
-fun formatSize(bytes: Long): String {
-    return when {
-        bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
-        bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
-        bytes >= 1_024 -> "%.1f KB".format(bytes / 1_024.0)
-        else -> "$bytes B"
-    }
 }
