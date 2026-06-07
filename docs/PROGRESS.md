@@ -40,34 +40,33 @@
 | Live agent step progress UI | ✅ Done | `bafac0e` |
 | Updated docs & README | ✅ Done | `bafac0e` |
 
-### Phase 5: Testing ✅ (2026-06-08)
+### Phase 5: Testing 🔄 (In Progress)
 | Task | Status | Commit |
 |------|--------|--------|
-| Unit test infrastructure | ✅ Done | `a84912b` |
-| ToolRegistry tests | ✅ Done | `a84912b` |
-| StorageTools tests | ✅ Done | `a84912b` |
-| ShellEngine tests | ✅ Done | `a84912b` |
-| AgentEngine tests | ✅ Done | `b2b7fbd` |
-| AIProvider tests | ✅ Done | `b2b7fbd` |
-| ViewModel tests | ✅ Done | `b2b7fbd` |
-| Integration tests | ✅ Done | `b2b7fbd` |
+| Unit test infrastructure | ✅ Done | `16d6a95` |
+| ToolRegistry tests (5) | ✅ Done | `16d6a95` |
+| StorageTools tests (10) | ✅ Done | `16d6a95` |
+| ShellEngine tests (6) | ✅ Done | `16d6a95` |
+| Integration tests (6) | ✅ Done | `16d6a95` |
+| Chat UI tests | 🔄 In progress | - |
+| ViewModel tests | 🔄 In progress | - |
 
-### Phase 6: Polish & UX ✅ (2026-06-08)
+### Phase 6: Polish & UX ✅ (2026-06-07)
 | Task | Status | Commit |
 |------|--------|--------|
 | Chat UI with message history | ✅ Done | `ef035a9` |
-| Inline error handling | ✅ Done | `69eac0c` |
-| Copy response button | ✅ Done | `69eac0c` |
-| Chat bubble animations | ✅ Done | `69eac0c` |
-| Pulsing typing indicator | ✅ Done | `69eac0c` |
-| Quick action chips | ✅ Done | `ef035a9` |
+| Copy message to clipboard | ✅ Done | `69eac0c` |
+| New chat button | ✅ Done | `69eac0c` |
+| Quick action buttons | ✅ Done | `69eac0c` |
+| Agent running indicator in chat | ✅ Done | `69eac0c` |
+| Polish & UX improvements | ✅ Done | `69eac0c` |
 
 ### Phase 7: Release 🔲 (Planned)
 | Task | Status | Notes |
 |------|--------|-------|
-| Play Store listing | 🔲 Pending | - |
+| Final testing on device | 🔲 Pending | After Phase 5 complete |
+| Play Store listing | 🔲 Pending | Screenshots, description |
 | Marketing materials | 🔲 Pending | - |
-| Performance optimization | 🔲 Pending | - |
 
 ---
 
@@ -79,9 +78,9 @@
 | 2 | `e1b3b53` | 2026-06-06 | refactor: rename to 'Beresin' |
 | 3 | `c89025e` | 2026-06-07 | fix: resolve all critical audit findings |
 | 4 | `bafac0e` | 2026-06-07 | refactor: replace PRoot with Agent + Tool System |
-| 5 | `ef035a9` | 2026-06-08 | feat: add Chat UI with message history |
-| 6 | `69eac0c` | 2026-06-08 | feat: Phase 6 Polish & UX improvements |
-| 7 | `b2b7fbd` | 2026-06-08 | feat: Phase 5 Testing - add comprehensive test suite |
+| 5 | `16d6a95` | 2026-06-07 | docs: add testing docs, progress tracking, unit tests |
+| 6 | `ef035a9` | 2026-06-07 | feat: add Chat UI with message history |
+| 7 | `69eac0c` | 2026-06-07 | feat: Phase 6 Polish & UX improvements |
 
 ---
 
@@ -91,10 +90,17 @@
 v1.0 (a84912b):
   UI → AIEngine (single API call) → ShellEngine → PRoot → Ubuntu
 
-v1.1 (bafac0e): ← CURRENT
+v1.1 (bafac0e):
   UI → AgentEngine (agentic loop) → ToolRegistry → 8 Tools → Android Shell
        ↓
        AIProvider (MiMo/GPT/Claude/DeepSeek)
+
+v1.2 (69eac0c): ← CURRENT
+  Chat UI → ViewModel → AgentEngine → ToolRegistry → 8 Tools → Shell
+              ↓
+              ChatMessage history + Quick actions
+              ↓
+              AIProvider (MiMo/GPT/Claude/DeepSeek)
 ```
 
 ---
@@ -103,15 +109,13 @@ v1.1 (bafac0e): ← CURRENT
 
 | Metric | Value |
 |--------|-------|
-| Total files | 31 |
-| Kotlin files | 15 |
+| Total files | 37 |
+| Kotlin files | 14 |
 | C files | 1 |
-| XML resources | 6 |
-| Config files | 5 |
-| Doc files | 3 |
-| Total lines | ~3500 |
-| Test files | 6 |
-| Test cases | 27 |
+| Test files | 4 |
+| Total test cases | 27 |
+| Total lines | ~4500 |
+| Commits | 7 |
 
 ---
-Last updated: 2026-06-08
+Last updated: 2026-06-07

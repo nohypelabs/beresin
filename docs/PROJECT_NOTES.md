@@ -28,7 +28,8 @@ App Android yang:
 ┌─────────────────────────────────────────────┐
 │              🎨 UI Layer                     │
 │         Jetpack Compose + Material3          │
-│   Welcome → Ready → AgentRunning → Result    │
+│   Welcome → Chat UI (message history)        │
+│   Quick actions + free chat input            │
 ├─────────────────────────────────────────────┤
 │              🧠 AI Agent Engine              │
 │   Agentic loop: plan → tool call → observe   │
