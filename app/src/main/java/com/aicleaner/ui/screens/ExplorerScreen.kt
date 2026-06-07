@@ -37,7 +37,6 @@ fun ExplorerScreen(
     onRequestPermission: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showSettingsDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -64,15 +63,6 @@ fun ExplorerScreen(
                                 tint = MaterialTheme.colorScheme.onPrimary
                             )
                         }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showSettingsDialog = true }) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
                     }
                 }
             )
@@ -123,21 +113,6 @@ fun ExplorerScreen(
                 }
             }
         }
-    }
-
-    // Settings Dialog
-    if (showSettingsDialog) {
-        SettingsDialog(
-            currentProvider = viewModel.getProviderType(),
-            currentKey = viewModel.getApiKey(),
-            currentModel = viewModel.getModel(),
-            currentBaseUrl = viewModel.getBaseUrl(),
-            onDismiss = { showSettingsDialog = false },
-            onSave = { provider, key, model, baseUrl ->
-                viewModel.saveConfig(provider, key, model, baseUrl)
-                showSettingsDialog = false
-            }
-        )
     }
 }
 
