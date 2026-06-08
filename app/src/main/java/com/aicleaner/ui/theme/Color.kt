@@ -2,31 +2,26 @@ package com.aicleaner.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary - Clean Blue
-val Primary = Color(0xFF2196F3)
-val PrimaryDark = Color(0xFF1976D2)
-val PrimaryLight = Color(0xFFBBDEFB)
+val Primary = Color(0xFF14D8A6)
+val PrimaryDark = Color(0xFF0EA57F)
+val PrimaryLight = Color(0xFFBFF7E8)
 
-// Accent - Green for success
-val AccentGreen = Color(0xFF4CAF50)
-val AccentGreenLight = Color(0xFFC8E6C9)
+val AccentGreen = Color(0xFF2FEA8A)
+val AccentGreenLight = Color(0xFFC9F9DF)
+val AccentOrange = Color(0xFFFFB545)
+val AccentOrangeLight = Color(0xFFFFE3B1)
+val AccentRed = Color(0xFFFF5C72)
+val AccentRedLight = Color(0xFFFFD0D8)
+val AccentCyan = Color(0xFF5AD7FF)
 
-// Warning - Orange
-val AccentOrange = Color(0xFFFF9800)
-val AccentOrangeLight = Color(0xFFFFE0B2)
-
-// Error - Red
-val AccentRed = Color(0xFFF44336)
-val AccentRedLight = Color(0xFFFFCDD2)
-
-// Background
-val BackgroundLight = Color(0xFFF5F5F5)
-val BackgroundDark = Color(0xFF121212)
+val BackgroundLight = Color(0xFFF4F7F4)
+val BackgroundDark = Color(0xFF080A09)
 val SurfaceLight = Color(0xFFFFFFFF)
-val SurfaceDark = Color(0xFF1E1E1E)
+val SurfaceDark = Color(0xFF111614)
+val SurfaceRaisedLight = Color(0xFFF9FCFA)
+val SurfaceRaisedDark = Color(0xFF18201D)
 
-// Text
-val TextPrimaryLight = Color(0xFF212121)
-val TextSecondaryLight = Color(0xFF757575)
-val TextPrimaryDark = Color(0xFFE0E0E0)
-val TextSecondaryDark = Color(0xFF9E9E9E)
+val TextPrimaryLight = Color(0xFF101714)
+val TextSecondaryLight = Color(0xFF5D6B64)
+val TextPrimaryDark = Color(0xFFF0F7F3)
+val TextSecondaryDark = Color(0xFFA7B6AE)

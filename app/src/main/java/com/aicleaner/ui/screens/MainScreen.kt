@@ -6,7 +6,9 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -17,6 +19,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ListAlt
+import androidx.compose.material.icons.automirrored.filled.ManageSearch
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -53,116 +58,74 @@ fun MainScreen(
     val suggestions by viewModel.suggestions.collectAsState()
     val pendingActions by viewModel.pendingActions.collectAsState()
     val isPremium by viewModel.isPremium.collectAsState()
+    val quotaRemaining by viewModel.quotaRemaining.collectAsState()
+    val quotaTotal by viewModel.quotaTotal.collectAsState()
+    val isAgentRunning = uiState is MainViewModel.UiState.AgentRunning
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showPremiumDialog by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Dora avatar
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("🤖", fontSize = 16.sp)
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                "Dora",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "Beresin AI",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                actions = {
-                    TextButton(onClick = { showPremiumDialog = true }) {
-                        Icon(
-                            Icons.Default.WorkspacePremium,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = if (isPremium) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (isPremium) "Premium" else "Upgrade")
-                    }
-                    if (chatMessages.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.clearChat() }) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "New Chat",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    IconButton(onClick = { showSettingsDialog = true }) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            )
-        }
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+                )
         ) {
-            when {
-                !hasStoragePermission -> PermissionScreen(onRequestPermission)
-                else -> {
-                    when (uiState) {
-                        is MainViewModel.UiState.Loading -> {
-                            // Show empty chat while greeting loads
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(32.dp),
-                                    strokeWidth = 3.dp
-                                )
-                            }
-                        }
-                        else -> {
-                            val quotaRemaining by viewModel.quotaRemaining.collectAsState()
-                            val quotaTotal by viewModel.quotaTotal.collectAsState()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+            ) {
+                BeresinHeader(
+                    isPremium = isPremium,
+                    quotaRemaining = quotaRemaining,
+                    quotaTotal = quotaTotal,
+                    isAgentRunning = isAgentRunning,
+                    hasMessages = chatMessages.isNotEmpty(),
+                    onPremiumClick = { showPremiumDialog = true },
+                    onClearChat = { viewModel.clearChat() },
+                    onSettingsClick = { showSettingsDialog = true }
+                )
 
-                            ChatScreen(
-                                messages = chatMessages,
-                                suggestions = suggestions,
-                                pendingActions = pendingActions,
-                                hasApiKey = viewModel.hasApiKey(),
-                                isOnboarding = uiState is MainViewModel.UiState.Onboarding,
-                                isPremium = isPremium,
-                                quotaRemaining = quotaRemaining,
-                                quotaTotal = quotaTotal,
-                                onSendMessage = { viewModel.runAgent(it) },
-                                onSetName = { viewModel.setUserName(it) },
-                                onSuggestionTap = { viewModel.onSuggestionTap(it) },
-                                onConfirmAction = { viewModel.confirmPendingAction(it) },
-                                onCancelAction = { viewModel.cancelPendingAction(it) },
-                                onUpgrade = { showPremiumDialog = true },
-                                isAgentRunning = uiState is MainViewModel.UiState.AgentRunning,
-                                onCancel = { viewModel.cancelAgent() }
-                            )
+                Box(modifier = Modifier.weight(1f)) {
+                    when {
+                        !hasStoragePermission -> PermissionScreen(onRequestPermission)
+                        else -> {
+                            when (uiState) {
+                                is MainViewModel.UiState.Loading -> {
+                                    LoadingState()
+                                }
+                                else -> {
+                                    ChatScreen(
+                                        messages = chatMessages,
+                                        suggestions = suggestions,
+                                        pendingActions = pendingActions,
+                                        hasApiKey = viewModel.hasApiKey(),
+                                        isOnboarding = uiState is MainViewModel.UiState.Onboarding,
+                                        isPremium = isPremium,
+                                        quotaRemaining = quotaRemaining,
+                                        quotaTotal = quotaTotal,
+                                        onSendMessage = { viewModel.runAgent(it) },
+                                        onSetName = { viewModel.setUserName(it) },
+                                        onSuggestionTap = { viewModel.onSuggestionTap(it) },
+                                        onConfirmAction = { viewModel.confirmPendingAction(it) },
+                                        onCancelAction = { viewModel.cancelPendingAction(it) },
+                                        onUpgrade = { showPremiumDialog = true },
+                                        isAgentRunning = isAgentRunning,
+                                        onCancel = { viewModel.cancelAgent() }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -198,6 +161,171 @@ fun MainScreen(
     }
 }
 
+@Composable
+fun BeresinHeader(
+    isPremium: Boolean,
+    quotaRemaining: Int,
+    quotaTotal: Int,
+    isAgentRunning: Boolean,
+    hasMessages: Boolean,
+    onPremiumClick: () -> Unit,
+    onClearChat: () -> Unit,
+    onSettingsClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(Primary, AccentCyan, AccentOrange)
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Beresin",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 0.sp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    StatusPill(
+                        text = if (isAgentRunning) "Running" else "Ready",
+                        color = if (isAgentRunning) AccentOrange else Primary
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    if (isPremium) "Premium active" else "$quotaRemaining/$quotaTotal chats today",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            HeaderIconButton(
+                icon = Icons.Default.WorkspacePremium,
+                selected = isPremium,
+                contentDescription = "Premium",
+                onClick = onPremiumClick
+            )
+            if (hasMessages) {
+                HeaderIconButton(
+                    icon = Icons.Default.Refresh,
+                    contentDescription = "New chat",
+                    onClick = onClearChat
+                )
+            }
+            HeaderIconButton(
+                icon = Icons.Default.Tune,
+                contentDescription = "Settings",
+                onClick = onSettingsClick
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeaderIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    selected: Boolean = false,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(
+                if (selected) AccentOrange.copy(alpha = 0.18f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.64f)
+            )
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = if (selected) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
+private fun StatusPill(text: String, color: androidx.compose.ui.graphics.Color) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(color.copy(alpha = 0.13f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun LoadingState() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(36.dp),
+                strokeWidth = 3.dp,
+                color = Primary
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                "Booting Dora",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
 // ==================== PERMISSION SCREEN ====================
 
 @Composable
@@ -209,21 +337,39 @@ fun PermissionScreen(onRequestPermission: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            Icons.Default.FolderOpen,
-            contentDescription = null,
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .clip(RoundedCornerShape(30.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(Primary.copy(alpha = 0.22f), AccentCyan.copy(alpha = 0.16f))
+                    )
+                )
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                    RoundedCornerShape(30.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.FolderOpen,
+                contentDescription = null,
+                modifier = Modifier.size(46.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            "Izin Akses Storage",
+            "Storage access",
             style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Black,
+            letterSpacing = 0.sp
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            "Dora butuh akses storage buat scan dan bersihin file HP lo.",
+            "Dora butuh akses file supaya bisa scan, sortir, dan ngerapihin storage lo.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -234,7 +380,7 @@ fun PermissionScreen(onRequestPermission: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            shape = RoundedCornerShape(16.dp)
+            shape = RoundedCornerShape(18.dp)
         ) {
             Icon(Icons.Default.Lock, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
@@ -271,21 +417,29 @@ fun ChatScreen(
     // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            listState.animateScrollToItem(messages.lastIndex)
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Chat messages
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .navigationBarsPadding()
+    ) {
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Chat messages
+            if (messages.isEmpty()) {
+                item {
+                    EmptyChatHero(isOnboarding = isOnboarding)
+                }
+            }
+
             items(messages) { message ->
                 when (message) {
                     is ChatMessage.User -> {
@@ -317,58 +471,161 @@ fun ChatScreen(
             }
         }
 
-        PendingActionPanel(
-            actions = pendingActions,
-            onConfirm = onConfirmAction,
-            onCancel = onCancelAction
-        )
-
-        // Suggestion chips (contextual)
-        AnimatedVisibility(
-            visible = suggestions.isNotEmpty() && !isAgentRunning,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
-            exit = fadeOut()
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+            tonalElevation = 10.dp,
+            shadowElevation = 16.dp,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
         ) {
-            SuggestionChips(
-                suggestions = suggestions,
-                onTap = onSuggestionTap
+            Column(
+                modifier = Modifier.padding(top = 10.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                PendingActionPanel(
+                    actions = pendingActions,
+                    onConfirm = onConfirmAction,
+                    onCancel = onCancelAction
+                )
+
+                AnimatedVisibility(
+                    visible = isAgentRunning && onCancel != null,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    RunningControl(onCancel = { onCancel?.invoke() })
+                }
+
+                AnimatedVisibility(
+                    visible = suggestions.isNotEmpty() && !isAgentRunning,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+                    exit = fadeOut()
+                ) {
+                    SuggestionChips(
+                        suggestions = suggestions,
+                        onTap = onSuggestionTap
+                    )
+                }
+
+                QuotaBar(
+                    remaining = quotaRemaining,
+                    total = quotaTotal,
+                    isPremium = isPremium,
+                    onUpgrade = onUpgrade
+                )
+
+                if (isOnboarding) {
+                    NameInputField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        onSubmit = {
+                            if (inputText.isNotBlank()) {
+                                onSetName(inputText.trim())
+                                inputText = ""
+                            }
+                        }
+                    )
+                } else {
+                    ChatInputField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        onSend = {
+                            if (inputText.isNotBlank()) {
+                                onSendMessage(inputText.trim())
+                                inputText = ""
+                            }
+                        },
+                        isEnabled = !isAgentRunning && hasApiKey
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyChatHero(isOnboarding: Boolean) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 28.dp, bottom = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(78.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(Primary.copy(alpha = 0.22f), AccentOrange.copy(alpha = 0.2f))
+                    )
+                )
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
+                    RoundedCornerShape(24.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.AutoAwesome,
+                contentDescription = null,
+                tint = Primary,
+                modifier = Modifier.size(36.dp)
             )
         }
-
-        // Quota display
-        QuotaBar(
-            remaining = quotaRemaining,
-            total = quotaTotal,
-            isPremium = isPremium,
-            onUpgrade = onUpgrade
+        Spacer(modifier = Modifier.height(18.dp))
+        Text(
+            if (isOnboarding) "Kenalan dulu" else "Command center storage lo",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Black,
+            textAlign = TextAlign.Center,
+            letterSpacing = 0.sp
         )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            if (isOnboarding) {
+                "Dora bakal pakai nama ini buat ngobrol lebih natural."
+            } else {
+                "Scan, sortir, rapihin, dan eksekusi file tetap minta izin lo dulu."
+            },
+            modifier = Modifier.widthIn(max = 310.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
 
-        // Input field
-        if (isOnboarding) {
-            // Name input during onboarding
-            NameInputField(
-                value = inputText,
-                onValueChange = { inputText = it },
-                onSubmit = {
-                    if (inputText.isNotBlank()) {
-                        onSetName(inputText.trim())
-                        inputText = ""
-                    }
-                }
+@Composable
+private fun RunningControl(onCancel: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = Primary
             )
-        } else {
-            // Normal chat input
-            ChatInputField(
-                value = inputText,
-                onValueChange = { inputText = it },
-                onSend = {
-                    if (inputText.isNotBlank()) {
-                        onSendMessage(inputText.trim())
-                        inputText = ""
-                    }
-                },
-                isEnabled = !isAgentRunning && hasApiKey
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                "Dora lagi jalanin request",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface
             )
+            TextButton(onClick = onCancel) {
+                Text("Stop")
+            }
         }
     }
 }
@@ -391,32 +648,42 @@ fun QuotaBar(
         else -> MaterialTheme.colorScheme.primary
     }
 
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                "💬",
-                fontSize = 14.sp
-            )
-            Spacer(modifier = Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(color.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    if (isPremium) Icons.Default.WorkspacePremium else Icons.Default.Bolt,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(10.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    if (isPremium) "Premium aktif" else "$remaining/$total chat hari ini",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    if (isPremium) "Premium aktif" else "Sisa $remaining chat",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 LinearProgressIndicator(
@@ -432,7 +699,11 @@ fun QuotaBar(
 
             if (!isPremium && remaining <= 3) {
                 Spacer(modifier = Modifier.width(8.dp))
-                TextButton(onClick = onUpgrade) {
+                FilledTonalButton(
+                    onClick = onUpgrade,
+                    shape = RoundedCornerShape(999.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
                     Text("Upgrade", style = MaterialTheme.typography.labelSmall)
                 }
             }
@@ -455,42 +726,61 @@ fun PendingActionPanel(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         actions.forEach { action ->
-            Card(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)
-                )
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.82f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.26f))
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                Column(modifier = Modifier.padding(14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             action.title,
                             style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.weight(1f)
                         )
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         action.details,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onConfirm(action.id) }) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Button(
+                            onClick = { onConfirm(action.id) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
                             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Izinkan")
                         }
-                        OutlinedButton(onClick = { onCancel(action.id) }) {
+                        OutlinedButton(
+                            onClick = { onCancel(action.id) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
                             Text("Batal")
                         }
                     }
@@ -510,8 +800,8 @@ fun SuggestionChips(
     LazyRow(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         items(suggestions) { suggestion ->
             SuggestionChip(
@@ -527,19 +817,39 @@ fun SuggestionChip(
     text: String,
     onClick: () -> Unit
 ) {
+    val icon = remember(text) { suggestionIcon(text) }
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        tonalElevation = 2.dp
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f),
+        tonalElevation = 3.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
     ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            fontWeight = FontWeight.Medium
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = Primary, modifier = Modifier.size(17.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+private fun suggestionIcon(text: String): ImageVector {
+    val lower = text.lowercase()
+    return when {
+        lower.contains("scan") -> Icons.Default.Radar
+        lower.contains("duplikat") -> Icons.Default.ContentCopy
+        lower.contains("rapih") || lower.contains("folder") -> Icons.Default.FolderCopy
+        lower.contains("bersih") || lower.contains("sampah") || lower.contains("clean") -> Icons.Default.CleaningServices
+        lower.contains("detail") -> Icons.AutoMirrored.Filled.ListAlt
+        else -> Icons.Default.AutoAwesome
     }
 }
 
@@ -551,17 +861,18 @@ fun NameInputField(
     onValueChange: (String) -> Unit,
     onSubmit: () -> Unit
 ) {
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp),
+            .padding(horizontal = 16.dp, vertical = 2.dp),
         shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
+                .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
@@ -582,8 +893,11 @@ fun NameInputField(
                 keyboardActions = KeyboardActions(onDone = { onSubmit() }),
                 shape = RoundedCornerShape(20.dp),
                 colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                    disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.36f),
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
                 )
             )
 
@@ -614,19 +928,41 @@ fun ChatInputField(
     onSend: () -> Unit,
     isEnabled: Boolean
 ) {
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp),
-        shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+            .imePadding(),
+        shape = RoundedCornerShape(26.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+        border = BorderStroke(
+            1.dp,
+            if (isEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
+                .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = if (isEnabled) Primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+
             OutlinedTextField(
                 value = value,
                 onValueChange = onValueChange,
@@ -635,7 +971,7 @@ fun ChatInputField(
                     .heightIn(min = 44.dp),
                 placeholder = {
                     Text(
-                        "Tanya Dora...",
+                        if (isEnabled) "Kasih perintah ke Dora..." else "Tunggu Dora selesai...",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -647,8 +983,12 @@ fun ChatInputField(
                 keyboardActions = KeyboardActions(onSend = { onSend() }),
                 shape = RoundedCornerShape(20.dp),
                 colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.52f),
+                    disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.34f),
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                    disabledBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
                 )
             )
 
@@ -657,11 +997,11 @@ fun ChatInputField(
             FilledIconButton(
                 onClick = onSend,
                 enabled = isEnabled && value.isNotBlank(),
-                modifier = Modifier.size(44.dp),
+                modifier = Modifier.size(46.dp),
                 shape = CircleShape
             ) {
                 Icon(
-                    Icons.Default.Send,
+                    Icons.AutoMirrored.Filled.Send,
                     contentDescription = "Send",
                     modifier = Modifier.size(20.dp)
                 )
@@ -676,20 +1016,22 @@ fun ChatInputField(
 fun UserBubble(text: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.Bottom
     ) {
-        Card(
-            modifier = Modifier.widthIn(max = 280.dp),
-            shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primary
-            )
+        Surface(
+            modifier = Modifier.widthIn(max = 292.dp),
+            shape = RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp),
+            color = MaterialTheme.colorScheme.primary,
+            tonalElevation = 4.dp,
+            shadowElevation = 3.dp
         ) {
             Text(
                 text = text,
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                 color = MaterialTheme.colorScheme.onPrimary,
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
             )
         }
 
@@ -698,16 +1040,16 @@ fun UserBubble(text: String) {
         // User avatar
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(30.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.tertiary),
+                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 Icons.Default.Person,
                 contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onTertiary
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.tertiary
             )
         }
     }
@@ -731,39 +1073,64 @@ fun AgentBubble(
         modifier = Modifier
             .fillMaxWidth()
             .offset(x = -offsetX),
-        horizontalArrangement = Arrangement.Start
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.Bottom
     ) {
-        // Dora avatar
         Box(
             modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary),
+                .size(34.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(Primary.copy(alpha = 0.95f), AccentCyan.copy(alpha = 0.82f))
+                    )
+                ),
             contentAlignment = Alignment.Center
         ) {
-            Text("🤖", fontSize = 16.sp)
+            Icon(
+                Icons.Default.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(18.dp)
+            )
         }
         Spacer(modifier = Modifier.width(8.dp))
 
-        // Message bubble
-        Card(
-            modifier = Modifier.widthIn(max = 280.dp),
-            shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+        Surface(
+            modifier = Modifier.widthIn(max = 302.dp),
+            shape = RoundedCornerShape(22.dp, 22.dp, 22.dp, 6.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            tonalElevation = 4.dp,
+            shadowElevation = 3.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
                 // Show steps summary if there are tool calls
                 if (steps.isNotEmpty()) {
                     val toolSteps = steps.filter { it.type == StepType.TOOL_CALL }
                     if (toolSteps.isNotEmpty()) {
-                        Text(
-                            "📋 ${toolSteps.size} operasi",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Terminal,
+                                contentDescription = null,
+                                tint = Primary,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                "${toolSteps.size} operasi",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
 
@@ -771,14 +1138,15 @@ fun AgentBubble(
                 Text(
                     text = text,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    lineHeight = 20.sp
                 )
 
                 // Success/failure indicator
                 if (!success) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "⚠️ Selesai dengan catatan",
+                        "Selesai dengan catatan",
                         style = MaterialTheme.typography.labelSmall,
                         color = AccentOrange
                     )
@@ -790,7 +1158,7 @@ fun AgentBubble(
                     TextButton(
                         onClick = { onCopy(text) },
                         modifier = Modifier.align(Alignment.End),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                     ) {
                         Icon(
                             Icons.Default.ContentCopy,
@@ -811,15 +1179,21 @@ fun AgentBubble(
 
 @Composable
 fun SystemMessage(text: String) {
-    Text(
-        text = text,
+    Surface(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center
-    )
+            .padding(vertical = 4.dp)
+            .fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f),
+        shape = RoundedCornerShape(999.dp)
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
 }
 
 @Composable
@@ -848,25 +1222,37 @@ fun AgentTypingIndicator() {
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.Bottom
     ) {
-        // Dora avatar
         Box(
             modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha)),
+                .size(34.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primary.copy(alpha = alpha),
+                            AccentCyan.copy(alpha = 0.7f)
+                        )
+                    )
+                ),
             contentAlignment = Alignment.Center
         ) {
-            Text("🤖", fontSize = 16.sp)
+            Icon(
+                Icons.Default.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(18.dp)
+            )
         }
         Spacer(modifier = Modifier.width(8.dp))
 
-        Card(
+        Surface(
             shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            tonalElevation = 3.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -916,41 +1302,71 @@ fun SettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("⚙️ Pengaturan AI") },
+        shape = RoundedCornerShape(28.dp),
+        icon = {
+            Icon(
+                Icons.Default.Tune,
+                contentDescription = null,
+                tint = Primary
+            )
+        },
+        title = {
+            Text(
+                "Pengaturan AI",
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.sp
+            )
+        },
         text = {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "Pilih AI provider:",
+                    "Provider",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(8.dp))
 
                 val providers = listOf(
-                    "mimo" to "🤖 Beresin MiMo",
-                    "openai" to "🧠 OpenAI GPT",
-                    "claude" to "🎭 Claude",
-                    "deepseek" to "🔮 DeepSeek",
-                    "custom" to "🔧 Custom API"
+                    "mimo" to "Beresin MiMo",
+                    "openai" to "OpenAI GPT",
+                    "claude" to "Claude",
+                    "deepseek" to "DeepSeek",
+                    "custom" to "Custom API"
                 )
 
                 providers.forEach { (id, label) ->
-                    Row(
+                    FilterChip(
+                        selected = provider == id,
+                        onClick = { provider = id },
+                        label = {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                providerIcon(id),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
+                            .heightIn(min = 42.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
                             selected = provider == id,
-                            onClick = { provider = id }
+                            borderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                            selectedBorderColor = Primary.copy(alpha = 0.42f)
+                        ),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                            selectedLabelColor = MaterialTheme.colorScheme.onSurface
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(label, style = MaterialTheme.typography.bodyMedium)
-                    }
+                    )
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
 
                 OutlinedTextField(
                     value = model,
@@ -966,11 +1382,11 @@ fun SettingsDialog(
                         })
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    shape = RoundedCornerShape(18.dp)
                 )
 
                 if (provider == "mimo" || provider == "custom") {
-                    Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = baseUrl,
                         onValueChange = { baseUrl = it },
@@ -980,12 +1396,12 @@ fun SettingsDialog(
                                  else "https://api.example.com/v1")
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        shape = RoundedCornerShape(18.dp)
                     )
                 }
 
                 if (provider != "mimo" || baseUrl.contains("https://")) {
-                    Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = key,
                         onValueChange = { key = it },
@@ -1006,18 +1422,24 @@ fun SettingsDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    when (provider) {
-                        "mimo" -> "💡 User tidak perlu API key. Server Beresin yang pegang provider key, quota, dan premium."
-                        "openai" -> "Get key: platform.openai.com"
-                        "claude" -> "Get key: console.anthropic.com"
-                        "deepseek" -> "Get key: platform.deepseek.com"
-                        else -> "Masukkan URL dan API key custom provider"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.64f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
+                ) {
+                    Text(
+                        when (provider) {
+                            "mimo" -> "User tidak perlu API key. Server Beresin yang pegang provider key, quota, dan premium."
+                            "openai" -> "Get key: platform.openai.com"
+                            "claude" -> "Get key: console.anthropic.com"
+                            "deepseek" -> "Get key: platform.deepseek.com"
+                            else -> "Masukkan URL dan API key custom provider"
+                        },
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         },
         confirmButton = {
@@ -1026,7 +1448,8 @@ fun SettingsDialog(
                 enabled = when (provider) {
                     "mimo" -> true
                     else -> key.isNotBlank()
-                }
+                },
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Text("Simpan")
             }
@@ -1037,6 +1460,16 @@ fun SettingsDialog(
             }
         }
     )
+}
+
+private fun providerIcon(provider: String): ImageVector {
+    return when (provider) {
+        "mimo" -> Icons.Default.AutoAwesome
+        "openai" -> Icons.Default.Psychology
+        "claude" -> Icons.Default.ChatBubble
+        "deepseek" -> Icons.AutoMirrored.Filled.ManageSearch
+        else -> Icons.Default.Api
+    }
 }
 
 @Composable
@@ -1050,20 +1483,34 @@ fun PremiumDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Upgrade Premium") },
+        shape = RoundedCornerShape(28.dp),
+        icon = {
+            Icon(
+                Icons.Default.WorkspacePremium,
+                contentDescription = null,
+                tint = AccentOrange
+            )
+        },
+        title = {
+            Text(
+                "Beresin Premium",
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.sp
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Premium unlock unlimited chat normal-use dan prioritas server. Untuk production, token ini diisi dari Google Play Billing purchase token.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                PremiumBenefit("Kuota chat lebih longgar")
+                PremiumBenefit("Prioritas server MiMo")
+                PremiumBenefit("Token divalidasi server, bukan cuma disimpan di app")
                 OutlinedTextField(
                     value = token,
                     onValueChange = { token = it },
                     label = { Text("Premium token") },
                     placeholder = { Text("purchase-token / dev token") },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
+                    minLines = 2,
+                    shape = RoundedCornerShape(18.dp)
                 )
                 Text(
                     "Install ID: ${installId.take(8)}...",
@@ -1072,7 +1519,10 @@ fun PremiumDialog(
                 )
                 Button(
                     onClick = onStartBilling,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(18.dp)
                 ) {
                     Icon(Icons.Default.ShoppingCart, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1083,7 +1533,8 @@ fun PremiumDialog(
         confirmButton = {
             Button(
                 onClick = { onSaveToken(token) },
-                enabled = token.isNotBlank()
+                enabled = token.isNotBlank(),
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Text("Aktifkan")
             }
@@ -1094,6 +1545,32 @@ fun PremiumDialog(
             }
         }
     )
+}
+
+@Composable
+private fun PremiumBenefit(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(AccentOrange.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = null,
+                tint = AccentOrange,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
 }
 
 // ==================== ERROR SCREEN ====================

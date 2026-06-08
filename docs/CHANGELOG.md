@@ -6,6 +6,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.4.0] - 2026-06-08
+
+### Changed
+- Reworked main chat surface into a modern command-center layout with custom header, brand status pill, and docked input.
+- Replaced dynamic device colors with a fixed Beresin palette for stronger product identity.
+- Polished chat bubbles, typing state, quota strip, pending action cards, quick action chips, permission screen, settings dialog, and premium dialog.
+- Removed emoji-led UI chrome in favor of Material icons and tighter component hierarchy.
+
+---
+
 ## [1.3.0] - 2026-06-08
 
 ### Added
