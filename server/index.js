@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +26,182 @@ const MIMO_CONFIG = {
 
 // Default provider
 const DEFAULT_PROVIDER = process.env.DEFAULT_PROVIDER || 'openai';
+const FREE_DAILY_QUOTA = Number(process.env.FREE_DAILY_QUOTA || 20);
+const PREMIUM_DAILY_QUOTA = Number(process.env.PREMIUM_DAILY_QUOTA || 1000);
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 30);
+const DATA_DIR = process.env.BERESIN_DATA_DIR || path.join(__dirname, '.data');
+const QUOTA_FILE = path.join(DATA_DIR, 'quota.json');
+const PREMIUM_TOKENS = new Set(
+  (process.env.PREMIUM_TOKENS || process.env.DEV_PREMIUM_TOKENS || '')
+    .split(',')
+    .map(token => token.trim())
+    .filter(Boolean)
+);
+
+const quotaStore = new Map();
+const rateStore = new Map();
+
+function loadQuotaStore() {
+  try {
+    if (!fs.existsSync(QUOTA_FILE)) return;
+
+    const parsed = JSON.parse(fs.readFileSync(QUOTA_FILE, 'utf8'));
+    const records = parsed.records || {};
+    for (const [installId, record] of Object.entries(records)) {
+      quotaStore.set(installId, {
+        day: record.day,
+        used: Number(record.used || 0),
+        total: Number(record.total || FREE_DAILY_QUOTA),
+        isPremium: Boolean(record.isPremium),
+        chargedTurns: new Set(Array.isArray(record.chargedTurns) ? record.chargedTurns : [])
+      });
+    }
+  } catch (error) {
+    console.warn('Could not load quota store:', error.message);
+  }
+}
+
+function persistQuotaStore() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const records = {};
+    for (const [installId, record] of quotaStore.entries()) {
+      records[installId] = {
+        day: record.day,
+        used: record.used,
+        total: record.total,
+        isPremium: record.isPremium,
+        chargedTurns: Array.from(record.chargedTurns).slice(-500)
+      };
+    }
+
+    fs.writeFileSync(QUOTA_FILE, JSON.stringify({ version: 1, records }, null, 2));
+  } catch (error) {
+    console.warn('Could not persist quota store:', error.message);
+  }
+}
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function getResetAt() {
+  const reset = new Date();
+  reset.setUTCHours(24, 0, 0, 0);
+  return reset.toISOString();
+}
+
+function clientIp(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+}
+
+function rateLimit(req, res, next) {
+  const key = clientIp(req);
+  const now = Date.now();
+  const bucket = rateStore.get(key) || { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+
+  if (now > bucket.resetAt) {
+    bucket.count = 0;
+    bucket.resetAt = now + RATE_LIMIT_WINDOW_MS;
+  }
+
+  bucket.count += 1;
+  rateStore.set(key, bucket);
+
+  if (bucket.count > RATE_LIMIT_MAX) {
+    return res.status(429).json({
+      error: 'rate_limited',
+      message: 'Too many requests. Try again shortly.',
+      retryAfterMs: Math.max(0, bucket.resetAt - now)
+    });
+  }
+
+  next();
+}
+
+function requireInstall(req, res, next) {
+  const installId = String(req.headers['x-beresin-install-id'] || '').trim();
+  if (!/^[a-f0-9-]{16,64}$/i.test(installId)) {
+    return res.status(401).json({
+      error: 'missing_install_id',
+      message: 'Beresin install id is required'
+    });
+  }
+
+  req.installId = installId;
+  req.turnId = String(req.headers['x-beresin-turn-id'] || '').trim() || `turn-${Date.now()}`;
+  req.isPremium = isPremiumRequest(req);
+  next();
+}
+
+function isPremiumRequest(req) {
+  const token = String(req.headers['x-beresin-premium-token'] || '').trim();
+  if (!token) return false;
+  if (PREMIUM_TOKENS.has(token)) return true;
+
+  // Production hook: verify Google Play purchase tokens server-side here.
+  // Do not trust the app to grant premium locally.
+  return false;
+}
+
+function getQuotaRecord(installId, isPremium) {
+  const today = getTodayKey();
+  const existing = quotaStore.get(installId);
+  const total = isPremium ? PREMIUM_DAILY_QUOTA : FREE_DAILY_QUOTA;
+
+  if (!existing || existing.day !== today || existing.isPremium !== isPremium) {
+    const created = {
+      day: today,
+      used: 0,
+      total,
+      isPremium,
+      chargedTurns: new Set()
+    };
+    quotaStore.set(installId, created);
+    persistQuotaStore();
+    return created;
+  }
+
+  if (existing.total !== total || existing.isPremium !== isPremium) {
+    existing.total = total;
+    existing.isPremium = isPremium;
+    persistQuotaStore();
+  }
+  return existing;
+}
+
+function consumeQuota(req, res, next) {
+  const record = getQuotaRecord(req.installId, req.isPremium);
+
+  if (!record.chargedTurns.has(req.turnId)) {
+    if (record.used >= record.total) {
+      return res.status(402).json({
+        error: 'quota_exceeded',
+        message: 'Daily quota exceeded',
+        quota: buildQuota(record)
+      });
+    }
+
+    record.used += 1;
+    record.chargedTurns.add(req.turnId);
+    persistQuotaStore();
+  }
+
+  req.quota = record;
+  next();
+}
+
+function buildQuota(record) {
+  return {
+    remaining: Math.max(0, record.total - record.used),
+    total: record.total,
+    isPremium: record.isPremium,
+    resetAt: getResetAt()
+  };
+}
+
+loadQuotaStore();
 
 /**
  * Health check endpoint
@@ -67,9 +245,62 @@ app.get('/api/providers', (req, res) => {
 });
 
 /**
+ * OpenAI-compatible endpoint (for direct app calls)
+ */
+app.post('/v1/chat/completions', rateLimit, requireInstall, consumeQuota, async (req, res) => {
+  try {
+    const { messages, tools, max_tokens = 4096 } = req.body;
+
+    const apiKey = API_KEYS.openai;
+    if (!apiKey) {
+      return res.status(400).json({ error: 'MiMo API key not configured' });
+    }
+
+    const baseUrl = MIMO_CONFIG.baseUrl || 'https://api.openai.com/v1';
+    const model = MIMO_CONFIG.model || 'gpt-4o';
+
+    const body = {
+      model,
+      max_tokens,
+      temperature: 0.3,
+      messages
+    };
+
+    if (tools && tools.length > 0) {
+      body.tools = tools;
+      body.tool_choice = 'auto';
+    }
+
+    console.log(`[v1] Calling ${model} at ${baseUrl}/chat/completions`);
+
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    res.setHeader('X-Beresin-Quota-Remaining', buildQuota(req.quota).remaining);
+    res.json(data); // Pass through directly (already OpenAI format)
+
+  } catch (error) {
+    console.error('[v1] Chat error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * Chat completion endpoint (proxies to AI providers)
  */
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', rateLimit, requireInstall, consumeQuota, async (req, res) => {
   try {
     const { provider, messages, tools, systemPrompt, maxTokens = 4096 } = req.body;
 
@@ -98,7 +329,10 @@ app.post('/api/chat', async (req, res) => {
         return res.status(400).json({ error: `Unknown provider: ${selectedProvider}` });
     }
 
-    res.json(response);
+    res.json({
+      ...response,
+      quota: buildQuota(req.quota)
+    });
 
   } catch (error) {
     console.error('Chat error:', error.message);

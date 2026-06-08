@@ -2,18 +2,49 @@ package com.aicleaner.tools
 
 import com.aicleaner.engine.ShellEngine
 import org.json.JSONObject
+import java.nio.file.Paths
 
 /**
- * Validate that a path is under /sdcard (security check).
+ * Validate that a path is under shared storage and normalize it before shell use.
  */
-private fun requireSdcard(path: String): String? {
-    if (!path.startsWith("/sdcard")) {
-        return "Access denied: path must be under /sdcard"
+private fun normalizeSharedStoragePath(path: String): String {
+    val trimmed = path.trim()
+    require(trimmed.isNotBlank()) { "Path is required" }
+    require(trimmed.startsWith("/")) { "Access denied: path must be absolute" }
+    require(!trimmed.any { it == '\u0000' || it == '\n' || it == '\r' }) {
+        "Access denied: path contains unsafe characters"
     }
-    if (path.contains("..")) {
-        return "Access denied: path traversal not allowed"
+
+    val normalized = Paths.get(trimmed).normalize().toString()
+    val isSharedStorage =
+        normalized == "/sdcard" ||
+        normalized.startsWith("/sdcard/") ||
+        normalized == "/storage/emulated/0" ||
+        normalized.startsWith("/storage/emulated/0/")
+
+    require(isSharedStorage) {
+        "Access denied: path must be under /sdcard or /storage/emulated/0"
     }
-    return null  // OK
+
+    val protectedAndroidDir =
+        normalized == "/sdcard/Android" ||
+        normalized.startsWith("/sdcard/Android/") ||
+        normalized == "/storage/emulated/0/Android" ||
+        normalized.startsWith("/storage/emulated/0/Android/")
+
+    require(!protectedAndroidDir) {
+        "Access denied: Android app-private directories are protected"
+    }
+
+    return normalized
+}
+
+private fun validateSharedStoragePath(path: String): Result<String> {
+    return runCatching { normalizeSharedStoragePath(path) }
+}
+
+private fun shellQuote(value: String): String {
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 }
 
 // ============================================================
@@ -29,16 +60,17 @@ class ListDirectoryTool(private val shell: ShellEngine) : Tool(
     )
 ) {
     override suspend fun execute(args: JSONObject): ToolResult {
-        val path = args.getString("path")
-        requireSdcard(path)?.let { return ToolResult(false, "", it) }
+        val path = validateSharedStoragePath(args.getString("path"))
+            .getOrElse { return ToolResult(false, "", it.message) }
 
         val maxDepth = args.optInt("max_depth", 1).coerceIn(1, 3)
+        val quotedPath = shellQuote(path)
 
-        val listing = shell.exec("ls -lah '$path' 2>/dev/null")
+        val listing = shell.exec("ls -lah $quotedPath 2>/dev/null")
         val sizes = if (maxDepth > 1) {
-            shell.exec("du -sh '$path'/*/ 2>/dev/null | sort -rh | head -30")
+            shell.exec("du -sh $quotedPath/*/ 2>/dev/null | sort -rh | head -30")
         } else {
-            shell.exec("du -sh '$path'/* 2>/dev/null | sort -rh | head -30")
+            shell.exec("du -sh $quotedPath/* 2>/dev/null | sort -rh | head -30")
         }
 
         val output = """
@@ -69,15 +101,21 @@ class FindFilesTool(private val shell: ShellEngine) : Tool(
     )
 ) {
     override suspend fun execute(args: JSONObject): ToolResult {
-        val path = args.getString("path")
-        requireSdcard(path)?.let { return ToolResult(false, "", it) }
+        val path = validateSharedStoragePath(args.getString("path"))
+            .getOrElse { return ToolResult(false, "", it.message) }
 
         val cmd = buildString {
-            append("find '$path'")
-            args.optInt("max_depth", 3).let { append(" -maxdepth $it") }
-            args.optString("file_type").let { if (it.isNotEmpty()) append(" -type $it") }
-            args.optString("name_pattern").let { if (it.isNotEmpty()) append(" -name '$it'") }
-            args.optString("min_size").let { if (it.isNotEmpty()) append(" -size +$it") }
+            append("find ${shellQuote(path)}")
+            args.optInt("max_depth", 3).coerceIn(1, 5).let { append(" -maxdepth $it") }
+            args.optString("file_type").let {
+                if (it == "f" || it == "d") append(" -type $it")
+            }
+            args.optString("name_pattern").let {
+                if (it.isNotEmpty()) append(" -name ${shellQuote(it)}")
+            }
+            args.optString("min_size").let {
+                if (it.matches(Regex("""\d+[kKmMgG]?"""))) append(" -size +$it")
+            }
             append(" 2>/dev/null | head -50")
         }
 
@@ -104,12 +142,13 @@ class GetFileInfoTool(private val shell: ShellEngine) : Tool(
     )
 ) {
     override suspend fun execute(args: JSONObject): ToolResult {
-        val path = args.getString("path")
-        requireSdcard(path)?.let { return ToolResult(false, "", it) }
+        val path = validateSharedStoragePath(args.getString("path"))
+            .getOrElse { return ToolResult(false, "", it.message) }
+        val quotedPath = shellQuote(path)
 
-        val size = shell.exec("du -sh '$path' 2>/dev/null").trim()
-        val stat = shell.exec("stat '$path' 2>/dev/null")
-        val type = shell.exec("file '$path' 2>/dev/null").trim()
+        val size = shell.exec("du -sh $quotedPath 2>/dev/null").trim()
+        val stat = shell.exec("stat $quotedPath 2>/dev/null")
+        val type = shell.exec("file $quotedPath 2>/dev/null").trim()
 
         return ToolResult(true, "Path: $path\nSize: $size\nType: $type\nDetails:\n$stat")
     }
@@ -128,21 +167,24 @@ class DeleteFileTool(private val shell: ShellEngine) : Tool(
     )
 ) {
     override suspend fun execute(args: JSONObject): ToolResult {
-        val path = args.getString("path")
-        requireSdcard(path)?.let { return ToolResult(false, "", it) }
+        val path = validateSharedStoragePath(args.getString("path"))
+            .getOrElse { return ToolResult(false, "", it.message) }
 
         // Safety: don't delete /sdcard itself
-        if (path == "/sdcard" || path == "/sdcard/") {
-            return ToolResult(false, "", "Cannot delete /sdcard root!")
+        if (path == "/sdcard" || path == "/storage/emulated/0") {
+            return ToolResult(false, "", "Cannot delete shared storage root!")
         }
 
-        val sizeBefore = shell.exec("du -sh '$path' 2>/dev/null").trim()
+        val quotedPath = shellQuote(path)
+        val sizeBefore = shell.exec("du -sh $quotedPath 2>/dev/null").trim()
         val recursive = args.optBoolean("recursive", false)
 
-        val cmd = if (recursive) "rm -rf '$path'" else "rm -f '$path'"
-        val result = shell.exec("$cmd 2>&1")
+        val cmd = if (recursive) "rm -rf $quotedPath" else "rm -f $quotedPath"
+        val result = shell.exec("$cmd 2>&1; if [ -e $quotedPath ]; then echo __BERESIN_DELETE_FAILED__; fi")
 
-        return if (result.isBlank() || !result.contains("Error", ignoreCase = true)) {
+        return if (!result.contains("__BERESIN_DELETE_FAILED__") &&
+            !result.contains("ERROR:", ignoreCase = true)
+        ) {
             ToolResult(true, "Deleted: $path (freed $sizeBefore)")
         } else {
             ToolResult(false, "", "Failed to delete $path: $result")
@@ -163,19 +205,26 @@ class MoveFileTool(private val shell: ShellEngine) : Tool(
     )
 ) {
     override suspend fun execute(args: JSONObject): ToolResult {
-        val source = args.getString("source")
-        val destination = args.getString("destination")
+        val source = validateSharedStoragePath(args.getString("source"))
+            .getOrElse { return ToolResult(false, "", it.message) }
+        val destination = validateSharedStoragePath(args.getString("destination"))
+            .getOrElse { return ToolResult(false, "", it.message) }
 
-        requireSdcard(source)?.let { return ToolResult(false, "", it) }
-        requireSdcard(destination)?.let { return ToolResult(false, "", it) }
+        val quotedSource = shellQuote(source)
+        val quotedDestination = shellQuote(destination)
 
         // Create destination directory if needed
         val destDir = destination.substringBeforeLast("/")
-        shell.exec("mkdir -p '$destDir'")
+        shell.exec("mkdir -p ${shellQuote(destDir)}")
 
-        val result = shell.exec("mv '$source' '$destination' 2>&1")
+        val result = shell.exec(
+            "mv $quotedSource $quotedDestination 2>&1; " +
+                "if [ -e $quotedSource ] || [ ! -e $quotedDestination ]; then echo __BERESIN_MOVE_FAILED__; fi"
+        )
 
-        return if (result.isBlank() || !result.contains("Error", ignoreCase = true)) {
+        return if (!result.contains("__BERESIN_MOVE_FAILED__") &&
+            !result.contains("ERROR:", ignoreCase = true)
+        ) {
             ToolResult(true, "Moved: $source → $destination")
         } else {
             ToolResult(false, "", "Failed to move: $result")
@@ -197,17 +246,21 @@ class CopyFileTool(private val shell: ShellEngine) : Tool(
     )
 ) {
     override suspend fun execute(args: JSONObject): ToolResult {
-        val source = args.getString("source")
-        val destination = args.getString("destination")
+        val source = validateSharedStoragePath(args.getString("source"))
+            .getOrElse { return ToolResult(false, "", it.message) }
+        val destination = validateSharedStoragePath(args.getString("destination"))
+            .getOrElse { return ToolResult(false, "", it.message) }
         val recursive = args.optBoolean("recursive", false)
 
-        requireSdcard(source)?.let { return ToolResult(false, "", it) }
-        requireSdcard(destination)?.let { return ToolResult(false, "", it) }
-
         val flag = if (recursive) "-r" else ""
-        val result = shell.exec("cp $flag '$source' '$destination' 2>&1")
+        val result = shell.exec(
+            "cp $flag ${shellQuote(source)} ${shellQuote(destination)} 2>&1; " +
+                "if [ ! -e ${shellQuote(destination)} ]; then echo __BERESIN_COPY_FAILED__; fi"
+        )
 
-        return if (result.isBlank() || !result.contains("Error", ignoreCase = true)) {
+        return if (!result.contains("__BERESIN_COPY_FAILED__") &&
+            !result.contains("ERROR:", ignoreCase = true)
+        ) {
             ToolResult(true, "Copied: $source → $destination")
         } else {
             ToolResult(false, "", "Failed to copy: $result")

@@ -9,10 +9,13 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -24,6 +27,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -41,34 +45,67 @@ import com.aicleaner.viewmodel.MainViewModel
 fun MainScreen(
     viewModel: MainViewModel,
     hasStoragePermission: Boolean,
-    onRequestPermission: () -> Unit
+    onRequestPermission: () -> Unit,
+    onStartPremiumPurchase: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
+    val suggestions by viewModel.suggestions.collectAsState()
+    val pendingActions by viewModel.pendingActions.collectAsState()
+    val isPremium by viewModel.isPremium.collectAsState()
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showPremiumDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🧹", fontSize = 24.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Beresin")
+                        // Dora avatar
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🤖", fontSize = 16.sp)
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                "Dora",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "Beresin AI",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.surface
                 ),
                 actions = {
-                    // Clear chat button (only show when there are messages)
+                    TextButton(onClick = { showPremiumDialog = true }) {
+                        Icon(
+                            Icons.Default.WorkspacePremium,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = if (isPremium) AccentOrange else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (isPremium) "Premium" else "Upgrade")
+                    }
                     if (chatMessages.isNotEmpty()) {
                         IconButton(onClick = { viewModel.clearChat() }) {
                             Icon(
                                 Icons.Default.Refresh,
                                 contentDescription = "New Chat",
-                                tint = MaterialTheme.colorScheme.onPrimary
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -76,7 +113,7 @@ fun MainScreen(
                         Icon(
                             Icons.Default.Settings,
                             contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onPrimary
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -91,48 +128,42 @@ fun MainScreen(
             when {
                 !hasStoragePermission -> PermissionScreen(onRequestPermission)
                 else -> {
-                    when (val state = uiState) {
-                        is MainViewModel.UiState.Welcome -> WelcomeScreen(
-                            onStart = { viewModel.checkAndSetup() }
-                        )
-                        is MainViewModel.UiState.Ready -> ChatScreen(
-                            messages = chatMessages,
-                            hasApiKey = viewModel.hasApiKey(),
-                            onSendMessage = { viewModel.runAgent(it) },
-                            onScan = { viewModel.scanStorage() },
-                            onOrganize = { viewModel.organizeDownloads() },
-                            onDuplicates = { viewModel.findDuplicates() },
-                            onCleanJunk = { viewModel.cleanJunk() }
-                        )
-                        is MainViewModel.UiState.AgentRunning -> ChatScreen(
-                            messages = chatMessages,
-                            hasApiKey = viewModel.hasApiKey(),
-                            onSendMessage = { viewModel.runAgent(it) },
-                            onScan = { viewModel.scanStorage() },
-                            onOrganize = { viewModel.organizeDownloads() },
-                            onDuplicates = { viewModel.findDuplicates() },
-                            onCleanJunk = { viewModel.cleanJunk() },
-                            isAgentRunning = true,
-                            onCancel = { viewModel.cancelAgent() }
-                        )
-                        is MainViewModel.UiState.AgentResult -> ChatScreen(
-                            messages = chatMessages,
-                            hasApiKey = viewModel.hasApiKey(),
-                            onSendMessage = { viewModel.runAgent(it) },
-                            onScan = { viewModel.scanStorage() },
-                            onOrganize = { viewModel.organizeDownloads() },
-                            onDuplicates = { viewModel.findDuplicates() },
-                            onCleanJunk = { viewModel.cleanJunk() }
-                        )
-                        is MainViewModel.UiState.Error -> ChatScreen(
-                            messages = chatMessages,
-                            hasApiKey = viewModel.hasApiKey(),
-                            onSendMessage = { viewModel.runAgent(it) },
-                            onScan = { viewModel.scanStorage() },
-                            onOrganize = { viewModel.organizeDownloads() },
-                            onDuplicates = { viewModel.findDuplicates() },
-                            onCleanJunk = { viewModel.cleanJunk() }
-                        )
+                    when (uiState) {
+                        is MainViewModel.UiState.Loading -> {
+                            // Show empty chat while greeting loads
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(32.dp),
+                                    strokeWidth = 3.dp
+                                )
+                            }
+                        }
+                        else -> {
+                            val quotaRemaining by viewModel.quotaRemaining.collectAsState()
+                            val quotaTotal by viewModel.quotaTotal.collectAsState()
+
+                            ChatScreen(
+                                messages = chatMessages,
+                                suggestions = suggestions,
+                                pendingActions = pendingActions,
+                                hasApiKey = viewModel.hasApiKey(),
+                                isOnboarding = uiState is MainViewModel.UiState.Onboarding,
+                                isPremium = isPremium,
+                                quotaRemaining = quotaRemaining,
+                                quotaTotal = quotaTotal,
+                                onSendMessage = { viewModel.runAgent(it) },
+                                onSetName = { viewModel.setUserName(it) },
+                                onSuggestionTap = { viewModel.onSuggestionTap(it) },
+                                onConfirmAction = { viewModel.confirmPendingAction(it) },
+                                onCancelAction = { viewModel.cancelPendingAction(it) },
+                                onUpgrade = { showPremiumDialog = true },
+                                isAgentRunning = uiState is MainViewModel.UiState.AgentRunning,
+                                onCancel = { viewModel.cancelAgent() }
+                            )
+                        }
                     }
                 }
             }
@@ -153,9 +184,21 @@ fun MainScreen(
             }
         )
     }
+
+    if (showPremiumDialog) {
+        PremiumDialog(
+            installId = viewModel.getInstallId(),
+            onStartBilling = onStartPremiumPurchase,
+            onDismiss = { showPremiumDialog = false },
+            onSaveToken = {
+                viewModel.savePremiumToken(it)
+                showPremiumDialog = false
+            }
+        )
+    }
 }
 
-// ==================== SCREENS ====================
+// ==================== PERMISSION SCREEN ====================
 
 @Composable
 fun PermissionScreen(onRequestPermission: () -> Unit) {
@@ -180,7 +223,7 @@ fun PermissionScreen(onRequestPermission: () -> Unit) {
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            "Beresin butuh akses storage untuk scan dan bersihkan file HP kamu.",
+            "Dora butuh akses storage buat scan dan bersihin file HP lo.",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -200,153 +243,26 @@ fun PermissionScreen(onRequestPermission: () -> Unit) {
     }
 }
 
-@Composable
-fun WelcomeScreen(onStart: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text("🧹", fontSize = 80.sp)
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            "Beresin",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "\"Beresin HP lu!\"",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Medium
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            "AI-powered storage cleaner.\nScan, analisa, dan rapihin otomatis!",
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(48.dp))
-        Button(
-            onClick = onStart,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Text("Mulai", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-fun ReadyScreen(
-    onScan: () -> Unit,
-    onOrganize: () -> Unit,
-    onDuplicates: () -> Unit,
-    onCleanJunk: () -> Unit,
-    hasApiKey: Boolean
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            "Siap! 🎉",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "Mau ngapain?",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        if (!hasApiKey) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Warning, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Tap ⚙️ untuk set API key dulu ya",
-                        style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Action cards
-        ActionCard(
-            icon = Icons.Default.Search,
-            title = "Scan Storage",
-            description = "Analisa semua file, cari sampah & duplikat",
-            gradient = Brush.horizontalGradient(listOf(Primary, PrimaryDark)),
-            onClick = onScan
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        ActionCard(
-            icon = Icons.Default.FolderOpen,
-            title = "Rapihin Download",
-            description = "Kategorisasi file di Download otomatis",
-            gradient = Brush.horizontalGradient(listOf(AccentGreen, AccentGreenLight)),
-            onClick = onOrganize
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        ActionCard(
-            icon = Icons.Default.ContentCopy,
-            title = "Cari Duplikat",
-            description = "Temukan file duplikat yang makan tempat",
-            gradient = Brush.horizontalGradient(listOf(AccentOrange, AccentOrangeLight)),
-            onClick = onDuplicates
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        ActionCard(
-            icon = Icons.Default.CleaningServices,
-            title = "Bersihin Sampah",
-            description = "Hapus file .tmp, .cache, .log, APK lama",
-            gradient = Brush.horizontalGradient(listOf(AccentRed, AccentRedLight)),
-            onClick = onCleanJunk
-        )
-    }
-}
-
 // ==================== CHAT SCREEN ====================
 
 @Composable
 fun ChatScreen(
     messages: List<ChatMessage>,
+    suggestions: List<String>,
+    pendingActions: List<com.aicleaner.tools.PendingToolAction>,
     hasApiKey: Boolean,
+    isOnboarding: Boolean,
+    isPremium: Boolean,
+    quotaRemaining: Int = 20,
+    quotaTotal: Int = 20,
     onSendMessage: (String) -> Unit,
-    onScan: () -> Unit,
-    onOrganize: () -> Unit,
-    onDuplicates: () -> Unit,
-    onCleanJunk: () -> Unit,
+    onSetName: (String) -> Unit,
+    onSuggestionTap: (String) -> Unit,
+    onConfirmAction: (String) -> Unit,
+    onCancelAction: (String) -> Unit,
+    onUpgrade: () -> Unit,
     isAgentRunning: Boolean = false,
-    onCancel: (() -> Unit)? = null,
-    errorMessage: String? = null
+    onCancel: (() -> Unit)? = null
 ) {
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -369,28 +285,28 @@ fun ChatScreen(
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Show quick actions if no messages yet
-            if (messages.isEmpty()) {
-                item {
-                    QuickActionsRow(
-                        onScan = onScan,
-                        onOrganize = onOrganize,
-                        onDuplicates = onDuplicates,
-                        onCleanJunk = onCleanJunk
-                    )
-                }
-            }
-
             // Chat messages
             items(messages) { message ->
-                ChatBubble(
-                    message = message,
-                    onCopy = { text ->
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("Beresin", text))
-                        Toast.makeText(context, "Disalin!", Toast.LENGTH_SHORT).show()
+                when (message) {
+                    is ChatMessage.User -> {
+                        UserBubble(text = message.text)
                     }
-                )
+                    is ChatMessage.Agent -> {
+                        AgentBubble(
+                            text = message.text,
+                            steps = message.steps,
+                            success = message.success,
+                            onCopy = { text ->
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Beresin", text))
+                                Toast.makeText(context, "Disalin!", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                    is ChatMessage.System -> {
+                        SystemMessage(text = message.text)
+                    }
+                }
             }
 
             // Agent running indicator
@@ -399,366 +315,297 @@ fun ChatScreen(
                     AgentTypingIndicator()
                 }
             }
-
-            // Error message inline
-            if (errorMessage != null) {
-                item {
-                    ErrorInlineCard(errorMessage)
-                }
-            }
         }
 
-        // API key warning
-        if (!hasApiKey) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Warning, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Set API key di ⚙️ dulu ya",
-                        style = MaterialTheme.typography.bodySmall)
-                }
-            }
+        PendingActionPanel(
+            actions = pendingActions,
+            onConfirm = onConfirmAction,
+            onCancel = onCancelAction
+        )
+
+        // Suggestion chips (contextual)
+        AnimatedVisibility(
+            visible = suggestions.isNotEmpty() && !isAgentRunning,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+            exit = fadeOut()
+        ) {
+            SuggestionChips(
+                suggestions = suggestions,
+                onTap = onSuggestionTap
+            )
         }
+
+        // Quota display
+        QuotaBar(
+            remaining = quotaRemaining,
+            total = quotaTotal,
+            isPremium = isPremium,
+            onUpgrade = onUpgrade
+        )
 
         // Input field
-        ChatInputField(
-            value = inputText,
-            onValueChange = { inputText = it },
-            onSend = {
-                if (inputText.isNotBlank()) {
-                    onSendMessage(inputText.trim())
-                    inputText = ""
+        if (isOnboarding) {
+            // Name input during onboarding
+            NameInputField(
+                value = inputText,
+                onValueChange = { inputText = it },
+                onSubmit = {
+                    if (inputText.isNotBlank()) {
+                        onSetName(inputText.trim())
+                        inputText = ""
+                    }
                 }
-            },
-            isEnabled = !isAgentRunning && hasApiKey
+            )
+        } else {
+            // Normal chat input
+            ChatInputField(
+                value = inputText,
+                onValueChange = { inputText = it },
+                onSend = {
+                    if (inputText.isNotBlank()) {
+                        onSendMessage(inputText.trim())
+                        inputText = ""
+                    }
+                },
+                isEnabled = !isAgentRunning && hasApiKey
+            )
+        }
+    }
+}
+
+// ==================== QUOTA BAR ====================
+
+@Composable
+fun QuotaBar(
+    remaining: Int,
+    total: Int,
+    isPremium: Boolean,
+    onUpgrade: () -> Unit
+) {
+    val safeTotal = total.coerceAtLeast(1)
+    val progress = if (isPremium) 1f else remaining.toFloat() / safeTotal.toFloat()
+    val color = when {
+        isPremium -> AccentOrange
+        remaining <= 3 -> MaterialTheme.colorScheme.error
+        remaining <= 10 -> AccentOrange
+        else -> MaterialTheme.colorScheme.primary
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "💬",
+                fontSize = 14.sp
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    if (isPremium) "Premium aktif" else "$remaining/$total chat hari ini",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = color,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            }
+
+            if (!isPremium && remaining <= 3) {
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(onClick = onUpgrade) {
+                    Text("Upgrade", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
     }
 }
 
 @Composable
-fun QuickActionsRow(
-    onScan: () -> Unit,
-    onOrganize: () -> Unit,
-    onDuplicates: () -> Unit,
-    onCleanJunk: () -> Unit
+fun PendingActionPanel(
+    actions: List<com.aicleaner.tools.PendingToolAction>,
+    onConfirm: (String) -> Unit,
+    onCancel: (String) -> Unit
 ) {
+    if (actions.isEmpty()) return
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 16.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            "🧹 Beresin",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            "Mau beresin apa hari ini?",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Quick action chips
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            QuickActionChip(
-                icon = Icons.Default.Search,
-                label = "Scan",
-                onClick = onScan,
-                modifier = Modifier.weight(1f)
-            )
-            QuickActionChip(
-                icon = Icons.Default.FolderOpen,
-                label = "Rapihin",
-                onClick = onOrganize,
-                modifier = Modifier.weight(1f)
-            )
+        actions.forEach { action ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            action.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        action.details,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onConfirm(action.id) }) {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Izinkan")
+                        }
+                        OutlinedButton(onClick = { onCancel(action.id) }) {
+                            Text("Batal")
+                        }
+                    }
+                }
+            }
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            QuickActionChip(
-                icon = Icons.Default.ContentCopy,
-                label = "Duplikat",
-                onClick = onDuplicates,
-                modifier = Modifier.weight(1f)
-            )
-            QuickActionChip(
-                icon = Icons.Default.CleaningServices,
-                label = "Sampah",
-                onClick = onCleanJunk,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            "Atau ketik pesan di bawah...",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
-@Composable
-fun QuickActionChip(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = modifier.height(44.dp),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(label, fontSize = 13.sp)
-    }
-}
+// ==================== SUGGESTION CHIPS ====================
 
 @Composable
-fun ChatBubble(
-    message: ChatMessage,
-    onCopy: ((String) -> Unit)? = null
+fun SuggestionChips(
+    suggestions: List<String>,
+    onTap: (String) -> Unit
 ) {
-    val isUser = message is ChatMessage.User
-
-    // Slide-in animation
-    val offsetX by animateDpAsState(
-        targetValue = 0.dp,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "slideIn"
-    )
-
-    Row(
+    LazyRow(
         modifier = Modifier
             .fillMaxWidth()
-            .offset(x = if (isUser) offsetX else -offsetX),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        if (!isUser) {
-            // Agent avatar
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("🤖", fontSize = 16.sp)
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-        }
-
-        // Message bubble
-        Card(
-            modifier = Modifier.widthIn(max = 280.dp),
-            shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (isUser) 16.dp else 4.dp,
-                bottomEnd = if (isUser) 4.dp else 16.dp
-            ),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isUser) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                }
+        items(suggestions) { suggestion ->
+            SuggestionChip(
+                text = suggestion,
+                onClick = { onTap(suggestion) }
             )
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                when (message) {
-                    is ChatMessage.User -> {
-                        Text(
-                            message.text,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                    is ChatMessage.Agent -> {
-                        // Show steps summary if there are tool calls
-                        if (message.steps.isNotEmpty()) {
-                            val toolSteps = message.steps.filter { it.type == StepType.TOOL_CALL }
-                            if (toolSteps.isNotEmpty()) {
-                                Text(
-                                    "📋 ${toolSteps.size} operasi",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                            }
-                        }
-
-                        // Main response text
-                        Text(
-                            message.text,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        // Success/failure indicator
-                        if (!message.success) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                "⚠️ Selesai dengan catatan",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = AccentOrange
-                            )
-                        }
-
-                        // Copy button for agent responses
-                        if (onCopy != null && message.text.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            TextButton(
-                                onClick = { onCopy(message.text) },
-                                modifier = Modifier.align(Alignment.End),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.ContentCopy,
-                                    contentDescription = "Salin",
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    "Salin",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (isUser) {
-            Spacer(modifier = Modifier.width(8.dp))
-            // User avatar
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.tertiary),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("👤", fontSize = 16.sp)
-            }
         }
     }
 }
 
 @Composable
-fun AgentTypingIndicator() {
-    // Pulsing animation
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseAlpha"
-    )
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start
+fun SuggestionChip(
+    text: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 2.dp
     ) {
-        // Agent avatar
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("🤖", fontSize = 16.sp)
-        }
-        Spacer(modifier = Modifier.width(8.dp))
-
-        Card(
-            shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    "Beresin lagi mikir...",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun ErrorInlineCard(message: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            fontWeight = FontWeight.Medium
         )
+    }
+}
+
+// ==================== NAME INPUT ====================
+
+@Composable
+fun NameInputField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSubmit: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Default.ErrorOutline,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Oops! Ada error",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp),
+                placeholder = {
+                    Text(
+                        "Ketik nama lo...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onSubmit() }),
+                shape = RoundedCornerShape(20.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant
                 )
-                Text(
-                    message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            FilledIconButton(
+                onClick = onSubmit,
+                enabled = value.isNotBlank(),
+                modifier = Modifier.size(44.dp),
+                shape = CircleShape
+            ) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = "Submit",
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
     }
 }
+
+// ==================== CHAT INPUT ====================
 
 @Composable
 fun ChatInputField(
@@ -788,7 +635,7 @@ fun ChatInputField(
                     .heightIn(min = 44.dp),
                 placeholder = {
                     Text(
-                        "Tanya Beresin...",
+                        "Tanya Dora...",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -796,6 +643,8 @@ fun ChatInputField(
                 enabled = isEnabled,
                 singleLine = false,
                 maxLines = 3,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { onSend() }),
                 shape = RoundedCornerShape(20.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -805,7 +654,6 @@ fun ChatInputField(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Send button
             FilledIconButton(
                 onClick = onSend,
                 enabled = isEnabled && value.isNotBlank(),
@@ -822,310 +670,234 @@ fun ChatInputField(
     }
 }
 
+// ==================== CHAT BUBBLES ====================
+
 @Composable
-fun ActionCard(
-    icon: ImageVector,
-    title: String,
-    description: String,
-    gradient: Brush,
-    onClick: () -> Unit
+fun UserBubble(text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End
+    ) {
+        Card(
+            modifier = Modifier.widthIn(max = 280.dp),
+            shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primary
+            )
+        ) {
+            Text(
+                text = text,
+                modifier = Modifier.padding(12.dp),
+                color = MaterialTheme.colorScheme.onPrimary,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // User avatar
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.tertiary),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.Person,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onTertiary
+            )
+        }
+    }
+}
+
+@Composable
+fun AgentBubble(
+    text: String,
+    steps: List<AgentStep> = emptyList(),
+    success: Boolean = true,
+    onCopy: ((String) -> Unit)? = null
 ) {
-    Card(
-        onClick = onClick,
+    // Slide-in animation
+    val offsetX by animateDpAsState(
+        targetValue = 0.dp,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "slideIn"
+    )
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(100.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+            .offset(x = -offsetX),
+        horizontalArrangement = Arrangement.Start
     ) {
-        Row(
+        // Dora avatar
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(gradient),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
+            Text("🤖", fontSize = 16.sp)
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Message bubble
+        Card(
+            modifier = Modifier.widthIn(max = 280.dp),
+            shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                // Show steps summary if there are tool calls
+                if (steps.isNotEmpty()) {
+                    val toolSteps = steps.filter { it.type == StepType.TOOL_CALL }
+                    if (toolSteps.isNotEmpty()) {
+                        Text(
+                            "📋 ${toolSteps.size} operasi",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                }
+
+                // Main response text
                 Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+
+                // Success/failure indicator
+                if (!success) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "⚠️ Selesai dengan catatan",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AccentOrange
+                    )
+                }
+
+                // Copy button
+                if (onCopy != null && text.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = { onCopy(text) },
+                        modifier = Modifier.align(Alignment.End),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Salin",
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "Salin",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-fun AgentRunningScreen(
-    message: String,
-    steps: List<AgentStep>,
-    onCancel: () -> Unit
-) {
-    val listState = rememberLazyListState()
+fun SystemMessage(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center
+    )
+}
 
-    // Auto-scroll to bottom
-    LaunchedEffect(steps.size) {
-        if (steps.isNotEmpty()) {
-            listState.animateScrollToItem(steps.size - 1)
-        }
-    }
+@Composable
+fun AgentTypingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.6f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Header
-        Card(
+    // Bouncing dots animation
+    val dotScale by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dotBounce"
+    )
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start
+    ) {
+        // Dora avatar
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            shape = RoundedCornerShape(16.dp),
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = alpha)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("🤖", fontSize = 16.sp)
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Card(
+            shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
             )
         ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = 3.dp
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "🤖 AI sedang bekerja...",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                // Bouncing dots
+                repeat(3) { index ->
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                    alpha = 0.3f + (0.7f * ((dotScale + index * 0.3f) % 1f))
+                                )
+                            )
                     )
                 }
-            }
-        }
-
-        // Steps list
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            items(steps) { step ->
-                StepItem(step)
-            }
-        }
-
-        // Cancel button
-        OutlinedButton(
-            onClick = onCancel,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .height(48.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Icon(Icons.Default.Close, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Batalkan")
-        }
-    }
-}
-
-@Composable
-fun StepItem(step: AgentStep) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                step.success == true -> AccentGreenLight
-                step.success == false -> AccentRedLight
-                step.type == StepType.TOOL_CALL -> MaterialTheme.colorScheme.surfaceVariant
-                else -> MaterialTheme.colorScheme.surface
-            }
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Icon
-            when {
-                step.type == StepType.RESPONSE -> {
-                    Text("💬", modifier = Modifier.padding(end = 8.dp))
-                }
-                step.success == true -> {
-                    Text("✅", modifier = Modifier.padding(end = 8.dp))
-                }
-                step.success == false -> {
-                    Text("❌", modifier = Modifier.padding(end = 8.dp))
-                }
-                else -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp).padding(end = 8.dp),
-                        strokeWidth = 2.dp
-                    )
-                }
-            }
-
-            // Content
-            Column(modifier = Modifier.weight(1f)) {
-                if (step.toolName != null) {
-                    Text(
-                        step.toolName,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    step.content,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun AgentResultScreen(
-    result: com.aicleaner.ai.AgentResult,
-    onDone: () -> Unit
-) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Header
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (result.success) AccentGreenLight
-                    else AccentOrangeLight
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    if (result.success) "🎉 Selesai!" else "⚠️ Selesai dengan catatan",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "${result.iterations} langkah • ${result.steps.size} operasi",
+                    "Dora lagi mikir...",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
-
-        // Final response
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .weight(1f),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            LazyColumn(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                item {
-                    Text(
-                        result.finalResponse,
-                        style = MaterialTheme.typography.bodyMedium,
-                        lineHeight = 24.sp
-                    )
-                }
-            }
-        }
-
-        // Done button
-        Button(
-            onClick = onDone,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .height(52.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("Selesai", fontSize = 16.sp)
-        }
     }
 }
 
-@Composable
-fun ErrorScreen(message: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            Icons.Default.ErrorOutline,
-            contentDescription = null,
-            modifier = Modifier.size(80.dp),
-            tint = AccentRed
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            "Oops!",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            message,
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(32.dp))
-        Button(
-            onClick = onRetry,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("Coba Lagi")
-        }
-    }
-}
+// ==================== SETTINGS DIALOG ====================
 
 @Composable
 fun SettingsDialog(
@@ -1154,9 +926,8 @@ fun SettingsDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Provider selection
                 val providers = listOf(
-                    "mimo" to "🤖 Xiaomi MiMo",
+                    "mimo" to "🤖 Beresin MiMo",
                     "openai" to "🧠 OpenAI GPT",
                     "claude" to "🎭 Claude",
                     "deepseek" to "🔮 DeepSeek",
@@ -1181,14 +952,13 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Model input
                 OutlinedTextField(
                     value = model,
                     onValueChange = { model = it },
                     label = { Text("Model (opsional)") },
                     placeholder = {
                         Text(when (provider) {
-                            "mimo" -> "MiMo-7B-RL"
+                            "mimo" -> "MiMo-2.5-Pro"
                             "openai" -> "gpt-4o"
                             "claude" -> "claude-sonnet-4-20250514"
                             "deepseek" -> "deepseek-chat"
@@ -1199,15 +969,14 @@ fun SettingsDialog(
                     singleLine = true
                 )
 
-                // Base URL for MiMo / Custom
                 if (provider == "mimo" || provider == "custom") {
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = baseUrl,
                         onValueChange = { baseUrl = it },
-                        label = { Text("API URL") },
+                        label = { Text(if (provider == "mimo") "Server URL" else "API URL") },
                         placeholder = {
-                            Text(if (provider == "mimo") "http://your-server:8000/v1"
+                            Text(if (provider == "mimo") "http://your-beresin-server:3000"
                                  else "https://api.example.com/v1")
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -1215,7 +984,6 @@ fun SettingsDialog(
                     )
                 }
 
-                // API Key (not needed for local MiMo)
                 if (provider != "mimo" || baseUrl.contains("https://")) {
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
@@ -1241,7 +1009,7 @@ fun SettingsDialog(
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     when (provider) {
-                        "mimo" -> "💡 MiMo bisa jalan lokal tanpa API key kalau di-host sendiri"
+                        "mimo" -> "💡 User tidak perlu API key. Server Beresin yang pegang provider key, quota, dan premium."
                         "openai" -> "Get key: platform.openai.com"
                         "claude" -> "Get key: console.anthropic.com"
                         "deepseek" -> "Get key: platform.deepseek.com"
@@ -1256,7 +1024,7 @@ fun SettingsDialog(
             Button(
                 onClick = { onSave(provider, key, model, baseUrl) },
                 enabled = when (provider) {
-                    "mimo" -> baseUrl.isNotBlank() || model.isNotBlank()
+                    "mimo" -> true
                     else -> key.isNotBlank()
                 }
             ) {
@@ -1269,4 +1037,104 @@ fun SettingsDialog(
             }
         }
     )
+}
+
+@Composable
+fun PremiumDialog(
+    installId: String,
+    onStartBilling: () -> Unit,
+    onDismiss: () -> Unit,
+    onSaveToken: (String) -> Unit
+) {
+    var token by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Upgrade Premium") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Premium unlock unlimited chat normal-use dan prioritas server. Untuk production, token ini diisi dari Google Play Billing purchase token.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text("Premium token") },
+                    placeholder = { Text("purchase-token / dev token") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
+                Text(
+                    "Install ID: ${installId.take(8)}...",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(
+                    onClick = onStartBilling,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.ShoppingCart, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Beli via Google Play")
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSaveToken(token) },
+                enabled = token.isNotBlank()
+            ) {
+                Text("Aktifkan")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Nanti")
+            }
+        }
+    )
+}
+
+// ==================== ERROR SCREEN ====================
+
+@Composable
+fun ErrorScreen(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            Icons.Default.ErrorOutline,
+            contentDescription = null,
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.error
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            "Oops!",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(32.dp))
+        Button(
+            onClick = onRetry,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text("Coba Lagi")
+        }
+    }
 }

@@ -19,7 +19,8 @@ Ternyata tidak ada satupun app di Play Store yang bisa:
 App Android yang:
 - Menggunakan AI Agent (agentic loop) buat multi-step file operations
 - 8 built-in tools yang jalan di Android shell langsung
-- Support MiMo (lokal, tanpa API key), GPT, Claude, DeepSeek
+- Default chat pakai MiMo via Beresin server proxy, jadi user tidak perlu API key
+- Server enforce quota/premium supaya freemium tidak bisa di-bypass dari client
 - User tinggal ngomong, AI yang kerjain
 
 ## 🏗️ Architecture (Final — v2.0)
@@ -41,7 +42,8 @@ App Android yang:
 │   All tools validate paths (must be /sdcard) │
 ├─────────────────────────────────────────────┤
 │              🤖 AI Providers                 │
-│   OpenAICompatibleProvider (MiMo/GPT/DS)     │
+│   ServerProvider default for Beresin MiMo    │
+│   OpenAICompatibleProvider (GPT/DS/custom)   │
 │   ClaudeProvider (Anthropic API)             │
 │   Unified interface via AIProvider           │
 ├─────────────────────────────────────────────┤
@@ -59,7 +61,9 @@ No PRoot! Direct Android shell access.
 - **UI**: Jetpack Compose + Material3
 - **Build**: Gradle 8.11.1 + CMake 3.22.1
 - **Network**: OkHttp3
+- **Billing**: Google Play Billing 9.0.0
 - **AI**: Multi-provider (OpenAI format + Claude format)
+- **Server**: Node/Express proxy for MiMo, quota, premium token gate
 - **Shell**: Android native shell (no PRoot)
 
 ## 📦 Dependencies
@@ -68,6 +72,7 @@ No PRoot! Direct Android shell access.
 - androidx.lifecycle:lifecycle-runtime-ktx:2.8.7
 - com.squareup.okhttp3:okhttp:4.12.0
 - org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0
+- com.android.billingclient:billing:9.0.0
 - junit:junit:4.13.2 (test)
 - androidx.test.ext:junit:1.2.1 (androidTest)
 - androidx.test.espresso:espresso-core:3.6.1 (androidTest)
@@ -86,7 +91,7 @@ No PRoot! Direct Android shell access.
 ## 🤖 Supported AI Providers
 | Provider | Model | API Key | Local? |
 |----------|-------|---------|--------|
-| Xiaomi MiMo | MiMo-7B-RL | Optional | ✅ (via vLLM) |
+| Beresin MiMo | Server configured | Not for user | Via server |
 | OpenAI | GPT-4o | Required | ❌ |
 | Claude | Claude Sonnet | Required | ❌ |
 | DeepSeek | DeepSeek Chat | Required | ❌ |
@@ -119,6 +124,9 @@ No PRoot! Direct Android shell access.
 - [x] Settings dialog (provider + API key)
 - [x] Storage permission handling
 - [x] Path security validation
+- [x] Destructive action confirmation
+- [x] Server-side quota enforcement
+- [x] Premium billing token capture
 - [x] Unit test infrastructure
 - [x] Documentation
 
@@ -133,9 +141,9 @@ No PRoot! Direct Android shell access.
 - [ ] Voice input
 
 ## 💰 Monetization Ideas
-- **Freemium**: Free 10 scans/month, premium unlimited
+- **Freemium**: Free daily chat quota, premium higher/unlimited quota via server
 - **One-time purchase**: Rp 29.000 - 49.000
-- **API key model**: User brings their own API key (current model)
+- **BYOK fallback**: User can bring their own API key for non-default providers
 
 ---
-Last updated: 2026-06-07
+Last updated: 2026-06-08

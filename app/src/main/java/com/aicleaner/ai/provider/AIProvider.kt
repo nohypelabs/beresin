@@ -69,6 +69,7 @@ data class ChatResponse(
     val toolCalls: List<ToolCall>,
     val hasToolCalls: Boolean = toolCalls.isNotEmpty(),
     val usage: TokenUsage? = null,
+    val quota: QuotaStatus? = null,
     val rawResponse: String? = null
 )
 
@@ -79,4 +80,11 @@ data class TokenUsage(
     val inputTokens: Int,
     val outputTokens: Int,
     val totalTokens: Int
+)
+
+data class QuotaStatus(
+    val remaining: Int,
+    val total: Int,
+    val isPremium: Boolean,
+    val resetAt: String? = null
 )

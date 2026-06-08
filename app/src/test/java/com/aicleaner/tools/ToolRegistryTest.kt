@@ -1,6 +1,8 @@
 package com.aicleaner.tools
 
 import com.aicleaner.engine.ShellEngine
+import com.aicleaner.ai.provider.ToolCall
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Before
@@ -68,5 +70,37 @@ class ToolRegistryTest {
             assertNotNull("Parameters should not be null", def.parameters)
             assertEquals("Should be object type", "object", def.parameters.optString("type"))
         }
+    }
+
+    @Test
+    fun `execute queues destructive tools for confirmation`() = runBlocking {
+        val result = registry.execute(
+            ToolCall(
+                id = "call_1",
+                name = "delete_file",
+                arguments = JSONObject().put("path", "/sdcard/Download/old.apk")
+            )
+        )
+
+        assertFalse(result.success)
+        assertEquals(true, result.metadata["requires_confirmation"])
+        assertEquals(1, registry.getPendingActions().size)
+    }
+
+    @Test
+    fun `cancelPendingAction removes queued destructive action`() = runBlocking {
+        val result = registry.execute(
+            ToolCall(
+                id = "call_1",
+                name = "move_file",
+                arguments = JSONObject()
+                    .put("source", "/sdcard/Download/file.pdf")
+                    .put("destination", "/sdcard/Documents/file.pdf")
+            )
+        )
+        val actionId = result.metadata["action_id"] as String
+
+        assertTrue(registry.cancelPendingAction(actionId))
+        assertTrue(registry.getPendingActions().isEmpty())
     }
 }

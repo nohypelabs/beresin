@@ -81,6 +81,9 @@ dependencies {
     // Network (untuk AI API calls)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // Google Play Billing (Premium subscription)
+    implementation("com.android.billingclient:billing:9.0.0")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 

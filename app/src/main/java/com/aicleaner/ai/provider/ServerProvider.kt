@@ -17,6 +17,10 @@ import java.util.concurrent.TimeUnit
 class ServerProvider(
     private val serverUrl: String,
     private val provider: String = "openai",
+    private val installId: String,
+    private val premiumToken: String = "",
+    private val turnId: String,
+    private val appVersion: String = "1.0.0",
     override val name: String = "Server"
 ) : AIProvider {
 
@@ -30,6 +34,9 @@ class ServerProvider(
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    var latestQuota: QuotaStatus? = null
+        private set
+
     override suspend fun chat(request: ChatRequest): ChatResponse {
         val body = buildRequestBody(request)
 
@@ -38,6 +45,14 @@ class ServerProvider(
         val httpRequest = Request.Builder()
             .url("$serverUrl/api/chat")
             .addHeader("Content-Type", "application/json")
+            .addHeader("X-Beresin-Install-Id", installId)
+            .addHeader("X-Beresin-Turn-Id", turnId)
+            .addHeader("X-Beresin-App-Version", appVersion)
+            .apply {
+                if (premiumToken.isNotBlank()) {
+                    addHeader("X-Beresin-Premium-Token", premiumToken)
+                }
+            }
             .post(body.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
@@ -156,12 +171,23 @@ class ServerProvider(
             )
         }
 
+        val quota = json.optJSONObject("quota")?.let { q ->
+            QuotaStatus(
+                remaining = q.optInt("remaining", 0),
+                total = q.optInt("total", 0),
+                isPremium = q.optBoolean("isPremium", false),
+                resetAt = q.optString("resetAt").ifBlank { null }
+            )
+        }
+        latestQuota = quota
+
         Log.d(TAG, "Response: text=${text.take(100)}, toolCalls=${toolCalls.size}")
 
         return ChatResponse(
             text = text,
             toolCalls = toolCalls,
             usage = usage,
+            quota = quota,
             rawResponse = responseBody
         )
     }

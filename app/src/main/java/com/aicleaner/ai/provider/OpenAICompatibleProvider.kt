@@ -36,9 +36,10 @@ class OpenAICompatibleProvider(
         .build()
 
     override suspend fun chat(request: ChatRequest): ChatResponse {
+        Log.d(TAG, "chat() called with ${request.messages.size} messages")
         val body = buildRequestBody(request)
 
-        Log.d(TAG, "Calling $name API at $baseUrl with model $model")
+        Log.d(TAG, "Calling $name API at $baseUrl/chat/completions with model $model")
         Log.d(TAG, "Messages: ${request.messages.size}, Tools: ${request.tools?.size ?: 0}")
 
         val httpRequest = Request.Builder()
@@ -176,8 +177,10 @@ class OpenAICompatibleProvider(
         val choice = choices.getJSONObject(0)
         val message = choice.getJSONObject("message")
 
-        // Extract text content
-        val text = message.optString("content", "")
+        // Extract text content — MiMo uses reasoning_content for thinking, content for response
+        val text = message.optString("content", "").ifEmpty {
+            message.optString("reasoning_content", "")
+        }
 
         // Extract tool calls
         val toolCalls = mutableListOf<ToolCall>()

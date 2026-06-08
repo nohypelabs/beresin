@@ -16,3 +16,6 @@ local.properties
 *.so
 app/.cxx/
 app/build/
+/.docdex/
+/.docdex-state/
+server/.data/

@@ -8,20 +8,13 @@ import org.json.JSONObject
 /**
  * Agentic loop engine.
  * Manages the conversation between user, AI model, and tools.
- *
- * Flow:
- * 1. User sends request
- * 2. AI decides what tools to call
- * 3. We execute tools and return results
- * 4. AI processes results and decides next step
- * 5. Repeat until AI says "done" (no more tool calls)
  */
 class AgentEngine(
     private val tools: ToolRegistry
 ) {
     companion object {
         private const val TAG = "AgentEngine"
-        private const val MAX_ITERATIONS = 20  // Safety limit
+        private const val MAX_ITERATIONS = 20
     }
 
     /**
@@ -30,27 +23,23 @@ class AgentEngine(
     suspend fun run(
         provider: AIProvider,
         userRequest: String,
+        userName: String = "",
         onStep: (AgentStep) -> Unit = {}
     ): AgentResult {
         val messages = mutableListOf<Message>()
         val steps = mutableListOf<AgentStep>()
         var iteration = 0
 
-        // Add user message
         messages.add(Message(role = "user", content = userRequest))
 
-        // Get tool definitions
         val toolDefs = tools.getToolDefinitions()
-
-        // System prompt
-        val systemPrompt = getSystemPrompt()
+        val systemPrompt = getSystemPrompt(userName)
 
         while (iteration < MAX_ITERATIONS) {
             iteration++
             Log.d(TAG, "Iteration $iteration")
 
             try {
-                // Call AI
                 val response = provider.chat(ChatRequest(
                     messages = messages,
                     tools = toolDefs,
@@ -58,7 +47,6 @@ class AgentEngine(
                     maxTokens = 4096
                 ))
 
-                // If no tool calls, we're done
                 if (!response.hasToolCalls) {
                     val step = AgentStep(
                         iteration = iteration,
@@ -77,14 +65,12 @@ class AgentEngine(
                     )
                 }
 
-                // Add assistant message with tool calls
                 messages.add(Message(
                     role = "assistant",
                     content = response.text.ifEmpty { null },
                     toolCalls = response.toolCalls
                 ))
 
-                // Execute each tool call
                 for (toolCall in response.toolCalls) {
                     val step = AgentStep(
                         iteration = iteration,
@@ -96,11 +82,9 @@ class AgentEngine(
                     steps.add(step)
                     onStep(step)
 
-                    // Execute tool
                     val result = tools.execute(toolCall)
                     Log.d(TAG, "Tool ${toolCall.name}: success=${result.success}, output=${result.output.take(100)}")
 
-                    // Update step with result
                     step.result = result.output
                     step.success = result.success
                     step.content = if (result.success) {
@@ -110,7 +94,6 @@ class AgentEngine(
                     }
                     onStep(step)
 
-                    // Add tool result to conversation
                     messages.add(Message(
                         role = "tool",
                         toolCallId = toolCall.id,
@@ -130,7 +113,6 @@ class AgentEngine(
             }
         }
 
-        // Max iterations reached
         return AgentResult(
             success = false,
             finalResponse = "Reached maximum iterations ($MAX_ITERATIONS). Task may be incomplete.",
@@ -141,12 +123,29 @@ class AgentEngine(
     }
 
     /**
-     * System prompt for the AI agent.
+     * System prompt — Dora personality.
      */
-    private fun getSystemPrompt(): String {
-        return """You are Beresin, an AI storage cleaning assistant for Android phones.
+    private fun getSystemPrompt(userName: String): String {
+        val nameContext = if (userName.isNotBlank()) {
+            "The user's name is $userName. Use their name occasionally to make it personal, but don't overdo it."
+        } else {
+            ""
+        }
 
-Your job is to help users clean, organize, and manage their phone storage.
+        return """You are Dora, the AI assistant inside Beresin — an Android phone cleaner app.
+
+PERSONALITY:
+- You're casual, friendly, and speak like a real person — not a robot
+- Use Indonesian slang naturally (lo/gw, dong, sih, nih, ya, bro)
+- Be warm and slightly playful, but still helpful and efficient
+- Keep responses SHORT and conversational — like texting a friend
+- Use emoji sparingly (1-2 per message max)
+- Never say "I'm an AI" or break character
+- You're the cool friend who happens to be really good at cleaning phones
+$nameContext
+
+YOUR JOB:
+Help users clean, organize, and manage their phone storage. You have access to tools that can scan, find, and manage files on their Android device.
 
 AVAILABLE TOOLS:
 - list_directory: List files in a directory with sizes
@@ -158,15 +157,22 @@ AVAILABLE TOOLS:
 - get_storage_summary: Get overall storage overview
 - execute_shell: Run read-only shell commands
 
+RESPONSE STYLE:
+- For scan results: give a quick summary first, then details if asked
+- Format file sizes nicely (MB/GB, not bytes)
+- When suggesting cleanup, be specific: "Ada 2.3GB file sampah, mau gw bersihin?"
+- Always ask before deleting anything
+- After cleaning, celebrate briefly: "Done! Storage lo naik 15% 🎉"
+- If user says "gas" or "bersihin semua" → proceed with cleanup
+
 RULES:
 1. ALWAYS explain what you're doing before calling a tool
 2. Ask for confirmation before deleting files
 3. Only operate under /sdcard (never touch system files)
 4. Be thorough but efficient — don't make unnecessary tool calls
 5. Report results clearly in a user-friendly format
-6. Use Indonesian if the user writes in Indonesian
-7. When organizing files, suggest a clear folder structure
-8. Track how much space was freed and report at the end
+6. Always respond in Indonesian (casual/informal)
+7. Track how much space was freed and report at the end
 
 SAFETY:
 - Never delete /sdcard root

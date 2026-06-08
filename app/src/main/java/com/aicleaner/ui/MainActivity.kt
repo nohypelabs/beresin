@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,9 +19,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aicleaner.ui.screens.ExplorerScreen
+import com.aicleaner.billing.BillingManager
+import com.aicleaner.ui.screens.MainScreen
 import com.aicleaner.ui.theme.AIStorageCleanerTheme
-import com.aicleaner.viewmodel.ExplorerViewModel
+import com.aicleaner.viewmodel.MainViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -52,12 +54,45 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val viewModel: ExplorerViewModel = viewModel()
+                    val viewModel: MainViewModel = viewModel()
+                    val billingManager = remember {
+                        BillingManager(
+                            context = this@MainActivity,
+                            onPremiumToken = { token ->
+                                runOnUiThread {
+                                    viewModel.savePremiumToken(token)
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Premium purchase token diterima. Validasi server saat chat berikutnya.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            onStatus = { message ->
+                                runOnUiThread {
+                                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                    }
 
-                    ExplorerScreen(
+                    LaunchedEffect(Unit) {
+                        billingManager.start()
+                    }
+
+                    DisposableEffect(billingManager) {
+                        onDispose {
+                            billingManager.release()
+                        }
+                    }
+
+                    MainScreen(
                         viewModel = viewModel,
                         hasStoragePermission = hasStoragePermission,
-                        onRequestPermission = { requestStoragePermission() }
+                        onRequestPermission = { requestStoragePermission() },
+                        onStartPremiumPurchase = {
+                            billingManager.launchPremiumPurchase(this@MainActivity)
+                        }
                     )
                 }
             }
@@ -79,7 +114,6 @@ class MainActivity : ComponentActivity() {
 
     private fun requestStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11+: Need MANAGE_EXTERNAL_STORAGE
             try {
                 val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
                     data = Uri.parse("package:$packageName")
@@ -90,7 +124,6 @@ class MainActivity : ComponentActivity() {
                 manageStorageLauncher.launch(intent)
             }
         } else {
-            // Android 10 and below
             storagePermissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.READ_EXTERNAL_STORAGE,

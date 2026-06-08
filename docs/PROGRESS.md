@@ -68,6 +68,18 @@
 | Play Store listing | 🔲 Pending | Screenshots, description |
 | Marketing materials | 🔲 Pending | - |
 
+### Phase 8: Monetization & Safety Hardening ✅ (2026-06-08)
+| Task | Status | Notes |
+|------|--------|-------|
+| Default MiMo server proxy | ✅ Done | `ServerProvider` sends install/turn/app headers |
+| Server-side quota enforcement | ✅ Done | Free/premium daily quota + rate limit |
+| Quota persistence | ✅ Done | `server/.data/quota.json` ignored by git |
+| Destructive action confirmation | ✅ Done | delete/move/copy queued as pending actions |
+| Storage path hardening | ✅ Done | Shared-storage normalization + shell quoting |
+| Premium billing scaffold | ✅ Done | Play Billing token capture; server validation hook remains env-backed |
+| Android build validation | ✅ Done | `testDebugUnitTest` + `assembleDebug` passed |
+| Server syntax validation | ✅ Done | `node --check server/index.js` passed |
+
 ---
 
 ## Commit History
@@ -95,12 +107,19 @@ v1.1 (bafac0e):
        ↓
        AIProvider (MiMo/GPT/Claude/DeepSeek)
 
-v1.2 (69eac0c): ← CURRENT
+v1.2 (69eac0c):
   Chat UI → ViewModel → AgentEngine → ToolRegistry → 8 Tools → Shell
               ↓
               ChatMessage history + Quick actions
               ↓
               AIProvider (MiMo/GPT/Claude/DeepSeek)
+
+v1.3 (2026-06-08): ← CURRENT
+  Chat UI → MainViewModel → ServerProvider → Beresin server proxy → MiMo/OpenAI-compatible API
+              ↓
+              Server quota + premium token check
+              ↓
+              AgentEngine → ToolRegistry → confirmed destructive actions → Android Shell
 ```
 
 ---
@@ -115,7 +134,7 @@ v1.2 (69eac0c): ← CURRENT
 | Test files | 4 |
 | Total test cases | 27 |
 | Total lines | ~4500 |
-| Commits | 7 |
+| Commits | 7+ |
 
 ---
-Last updated: 2026-06-07
+Last updated: 2026-06-08

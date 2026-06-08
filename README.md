@@ -8,7 +8,8 @@ Android app yang menggunakan AI agent untuk scan, analisa, dan bersihkan storage
 
 - **🤖 AI Agent** — Ngobrol aja, AI yang kerjain (multi-step tool execution)
 - **🔧 Custom Tools** — 8 tools buat manage file (list, find, delete, move, copy, dll)
-- **🧠 Multi-Provider** — Support Xiaomi MiMo, OpenAI, Claude, DeepSeek
+- **🧠 Server-hosted MiMo** — User chat lewat Beresin server proxy, jadi user tidak perlu API key
+- **💰 Freemium Quota** — Quota chat harian enforced di server, dengan jalur premium
 - **📱 Self-contained** — Gak perlu install app lain (no Termux, no PRoot)
 - **🎯 One-tap Actions** — Scan, Organize, Find Duplicates, Clean Junk
 
@@ -21,7 +22,11 @@ Android app yang menggunakan AI agent untuk scan, analisa, dan bersihkan storage
 ├─────────────────────────────────────────────┤
 │              🧠 AI Agent Engine              │
 │   Agentic loop: plan → tool call → observe   │
-│   Multi-provider (MiMo/GPT/Claude/DeepSeek) │
+│   Default MiMo via Beresin server proxy      │
+├─────────────────────────────────────────────┤
+│              🌐 Server Proxy                 │
+│   Holds provider API keys, quota, premium    │
+│   POST /v1/chat/completions + /api/chat      │
 ├─────────────────────────────────────────────┤
 │              🔧 Tool Registry                │
 │   list_dir | find_files | delete | move |    │
@@ -39,26 +44,28 @@ No PRoot! Direct Android shell access.
 
 | Provider | Model | API Key Needed |
 |----------|-------|----------------|
-| 🤖 **Xiaomi MiMo** | MiMo-7B-RL | ❌ (local inference) |
+| 🤖 **Beresin MiMo** | MiMo-2.5-Pro/server config | ❌ |
 | 🧠 **OpenAI** | GPT-4o | ✅ |
 | 🎭 **Claude** | Claude Sonnet | ✅ |
 | 🔮 **DeepSeek** | DeepSeek Chat | ✅ |
 | 🔧 **Custom** | Any OpenAI-compat | Depends |
 
-### Running MiMo Locally (No API Key!)
+### Running Beresin Server Proxy
 
 ```bash
-# Install vLLM
-pip install vllm
+# Server keeps provider keys and quota enforcement off the APK
+cd server
+npm install
 
-# Serve MiMo with OpenAI-compatible API
-vllm serve XiaomiMiMo/MiMo-7B-RL --host 0.0.0.0 --port 8000
+MIMO_BASE_URL=http://YOUR_MIMO_HOST/v1 \
+MIMO_MODEL=MiMo-2.5-Pro \
+OPENAI_API_KEY=... \
+FREE_DAILY_QUOTA=20 \
+PREMIUM_TOKENS=dev-token-1,dev-token-2 \
+npm start
 
-# In Beresin app:
-# Provider: Xiaomi MiMo
-# API URL: http://YOUR_IP:8000/v1
-# Model: MiMo-7B-RL
-# API Key: (leave empty)
+# In Beresin app, default provider points to the Beresin server root.
+# Example: http://192.168.100.140:3000
 ```
 
 ## 🔧 Available Tools
@@ -94,9 +101,10 @@ User: "bersihin storage gw"
   📋 Step 1: get_storage_summary → 225GB total, 105GB used
   📋 Step 2: find_files("*.apk") → 8 files, 877MB
   📋 Step 3: "Ketemu 8 APK sampah, mau gw hapus?"
-  User: "hapus"
-  📋 Step 4: delete_file(MEXC.apk) ✅ freed 388MB
-  📋 Step 5: delete_file(app-xxx.apk) ✅ freed 162MB
+  UI: tampilkan panel konfirmasi delete_file
+  User: tap "Izinkan"
+  📋 Step 4: delete_file(MEXC.apk) ✅
+  📋 Step 5: delete_file(app-xxx.apk) ✅
   📋 Step 6: move_file(invoice.pdf → Documents/Invoices/) ✅
   ...
 🤖 Done! Beresin 877MB, 245 file dipindah.
@@ -106,9 +114,11 @@ User: "bersihin storage gw"
 
 - All tools only operate under `/sdcard` (never system files)
 - Path validation rejects `..`, shell metacharacters
+- `delete_file`, `move_file`, and `copy_file` require explicit user confirmation
 - `execute_shell` tool has command whitelist (read-only only)
 - API keys stored in SharedPreferences (not logged)
-- No data sent to our servers
+- Default MiMo requests go through the Beresin server proxy for quota/premium enforcement
+- Server quota persists in `server/.data/quota.json` and is ignored by git
 
 ## 📁 File Structure
 

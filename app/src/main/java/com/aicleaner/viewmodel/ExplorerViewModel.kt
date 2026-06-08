@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * ViewModel for the AI Storage Explorer.
@@ -30,6 +31,9 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         private const val KEY_PROVIDER = "api_provider"
         private const val KEY_MODEL = "api_model"
         private const val KEY_BASE_URL = "api_base_url"
+        private const val KEY_INSTALL_ID = "install_id"
+        private const val KEY_PREMIUM_TOKEN = "premium_token"
+        private const val APP_VERSION = "1.0.0"
     }
 
     // Core components
@@ -60,6 +64,8 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
     private var providerType = prefs.getString(KEY_PROVIDER, "server") ?: "server"
     private var model = prefs.getString(KEY_MODEL, "") ?: ""
     private var baseUrl = prefs.getString(KEY_BASE_URL, "") ?: ""
+    private val installId = getOrCreateInstallId()
+    private var premiumToken = prefs.getString(KEY_PREMIUM_TOKEN, "") ?: ""
 
     private var scanJob: Job? = null
     private var aiJob: Job? = null
@@ -67,7 +73,7 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Check if API key is configured.
      */
-    fun hasApiKey(): Boolean = apiKey.isNotBlank() || providerType == "mimo"
+    fun hasApiKey(): Boolean = apiKey.isNotBlank() || providerType == "mimo" || providerType == "server"
 
     /**
      * Save API configuration.
@@ -288,12 +294,16 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
             "server" -> ServerProvider(
                 serverUrl = baseUrl.ifBlank { "http://10.0.2.2:3000" }, // Android emulator localhost
                 provider = model.ifBlank { "openai" },
+                installId = installId,
+                premiumToken = premiumToken,
+                turnId = UUID.randomUUID().toString(),
+                appVersion = APP_VERSION,
                 name = "Beresin Server"
             )
             "mimo" -> OpenAICompatibleProvider(
                 baseUrl = baseUrl.ifBlank { "http://localhost:8000/v1" },
                 apiKey = apiKey.ifBlank { "not-needed" },
-                model = model.ifBlank { "MiMo-7B-RL" },
+                model = model.ifBlank { "MiMo-2.5-Pro" },
                 name = "Xiaomi MiMo"
             )
             "openai" -> OpenAICompatibleProvider(
@@ -329,6 +339,15 @@ class ExplorerViewModel(app: Application) : AndroidViewModel(app) {
         aiJob?.cancel()
         _uiState.value = ExplorerUiState.Welcome
         _aiState.value = AiState.Idle
+    }
+
+    private fun getOrCreateInstallId(): String {
+        val existing = prefs.getString(KEY_INSTALL_ID, "") ?: ""
+        if (existing.isNotBlank()) return existing
+
+        val created = UUID.randomUUID().toString()
+        prefs.edit().putString(KEY_INSTALL_ID, created).apply()
+        return created
     }
 }
 

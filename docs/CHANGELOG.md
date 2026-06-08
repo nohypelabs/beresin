@@ -6,6 +6,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.3.0] - 2026-06-08
+
+### Added
+- Server-hosted MiMo flow via `ServerProvider`, so default users can chat without bringing an API key.
+- Server-side daily quota, rate limit, install-id tracking, and turn-id idempotency.
+- File-backed quota persistence at `server/.data/quota.json`.
+- Premium UI entry point plus Play Billing subscription purchase-token capture.
+- Pending action panel for destructive file operations.
+
+### Changed
+- Default MiMo base URL now points to the Beresin server root instead of a raw `/v1` provider endpoint.
+- Server responses now return quota metadata consumed by the Android UI.
+- App label now uses the `Beresin` string resource.
+
+### Fixed
+- `delete_file`, `move_file`, and `copy_file` can no longer execute only from model intent; they require explicit user confirmation.
+- Storage paths are normalized, validated under shared storage, and shell-quoted before command execution.
+- Play Billing dependency uses the non-KTX `billing:9.0.0` artifact to avoid Kotlin metadata mismatch with Kotlin 2.1.0.
+- Billing client connection is released from the Compose lifecycle.
+
+---
+
 ## [1.2.0] - 2026-06-07
 
 ### ✨ Added

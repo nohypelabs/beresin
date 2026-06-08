@@ -20,6 +20,15 @@
 
 ## Running Tests
 
+### Current Validation Snapshot
+```bash
+node --check server/index.js
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
+```
+
+Last run: 2026-06-08. All three passed.
+
 ### Unit Tests (Fast, no device)
 ```bash
 # All unit tests
